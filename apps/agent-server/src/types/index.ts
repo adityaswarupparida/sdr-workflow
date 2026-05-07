@@ -1,0 +1,71 @@
+export type LeadStatus = "new" | "contacted" | "qualified" | "unqualified" | "converted";
+export type DealStage = "prospecting" | "qualification" | "proposal" | "negotiation" | "closed_won" | "closed_lost";
+export type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated";
+export type EscalationReason =
+  | "pricing_or_quote"
+  | "technical_deep_dive"
+  | "existing_customer"
+  | "legal_or_contract"
+  | "low_confidence";
+
+export interface Lead {
+  id: string;
+  name: string;
+  email: string;
+  company: string;
+  title: string;
+  accountId: string;
+  status: LeadStatus;
+  industry?: string;
+  employeeCount?: number;
+}
+
+export interface Opportunity {
+  id: string;
+  accountId: string;
+  name: string;
+  stage: DealStage;
+  amount?: number;
+  closeDate?: string;
+}
+
+export interface ConversationMessage {
+  role: "user" | "assistant" | "tool_use" | "tool_result";
+  content: string;
+  toolName?: string;
+  toolInput?: unknown;
+  toolResult?: unknown;
+  timestamp: string;
+}
+
+export interface Conversation {
+  id: string;
+  threadId: string;
+  leadEmail: string;
+  leadName?: string;
+  messages: ConversationMessage[];
+  status: ConversationStatus;
+  escalationReason?: EscalationReason;
+  draftReply?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InboundEmail {
+  from: string;
+  subject: string;
+  body: string;
+  threadId?: string;
+  messageId?: string;
+  receivedAt: string;
+}
+
+export interface AgentOutcome {
+  conversationId: string;
+  escalated: boolean;
+  escalationReason?: EscalationReason;
+  draftReply?: string;
+  emailSent: boolean;
+  hubspotLogged: boolean;
+  followupScheduled?: { daysFromNow: number; reason: string };
+}

@@ -1,102 +1,110 @@
-import Image, { type ImageProps } from "next/image";
-import { Button } from "@repo/ui/button";
-import styles from "./page.module.css";
+"use client";
 
-type Props = Omit<ImageProps, "src"> & {
-  srcLight: string;
-  srcDark: string;
-};
+import { useEffect, useState, useCallback } from "react";
 
-const ThemeImage = (props: Props) => {
-  const { srcLight, srcDark, ...rest } = props;
+type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated";
+
+interface Conversation {
+  id: string;
+  threadId: string;
+  leadEmail: string;
+  leadName?: string;
+  status: ConversationStatus;
+  escalationReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: unknown[];
+}
+
+const TABS: { label: string; value: string }[] = [
+  { label: "All", value: "" },
+  { label: "Needs Review", value: "pending_review" },
+  { label: "Active", value: "active" },
+  { label: "Resolved", value: "resolved" },
+];
+
+function Badge({ status }: { status: ConversationStatus }) {
+  const label = status === "pending_review" ? "Needs Review" : status;
+  return <span className={`badge badge-${status}`}>{label}</span>;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+export default function HomePage() {
+  const [tab, setTab] = useState("");
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const url = tab ? `/api/conversations?status=${tab}` : "/api/conversations";
+    const res = await fetch(url);
+    const data = (await res.json()) as Conversation[] | { error: string };
+    setConversations(Array.isArray(data) ? data : []);
+    setLoading(false);
+  }, [tab]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const allConvs = conversations;
+  const needsReviewCount = allConvs.filter((c) => c.status === "pending_review").length;
 
   return (
     <>
-      <Image {...rest} src={srcLight} className="imgLight" />
-      <Image {...rest} src={srcDark} className="imgDark" />
-    </>
-  );
-};
+      <h1 className="page-title">Conversations</h1>
+      <p className="page-subtitle">AI-handled inbound emails · human review queue · full audit trail</p>
 
-export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <ThemeImage
-          className={styles.logo}
-          srcLight="turborepo-dark.svg"
-          srcDark="turborepo-light.svg"
-          alt="Turborepo logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>apps/web/app/page.tsx</code>
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+      <div className="tabs">
+        {TABS.map((t) => (
+          <button key={t.value} className={`tab${tab === t.value ? " active" : ""}`} onClick={() => setTab(t.value)}>
+            {t.label}
+            {t.value === "pending_review" && needsReviewCount > 0 ? ` (${needsReviewCount})` : ""}
+          </button>
+        ))}
+        <button className="tab" style={{ marginLeft: "auto" }} onClick={() => void load()}>↻ Refresh</button>
+      </div>
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new/clone?demo-description=Learn+to+implement+a+monorepo+with+a+two+Next.js+sites+that+has+installed+three+local+packages.&demo-image=%2F%2Fimages.ctfassets.net%2Fe5382hct74si%2F4K8ZISWAzJ8X1504ca0zmC%2F0b21a1c6246add355e55816278ef54bc%2FBasic.png&demo-title=Monorepo+with+Turborepo&demo-url=https%3A%2F%2Fexamples-basic-web.vercel.sh%2F&from=templates&project-name=Monorepo+with+Turborepo&repository-name=monorepo-turborepo&repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fturborepo%2Ftree%2Fmain%2Fexamples%2Fbasic&root-directory=apps%2Fdocs&skippable-integrations=1&teamSlug=vercel&utm_source=create-turbo"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://turborepo.dev/docs?utm_source"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
+      {loading ? (
+        <p className="empty">Loading…</p>
+      ) : conversations.length === 0 ? (
+        <p className="empty">No conversations{tab ? ` with status "${tab}"` : ""}. Trigger one via <code>POST /webhooks/email</code> on the agent server.</p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Lead</th>
+                <th>Status</th>
+                <th>Escalation Reason</th>
+                <th>Messages</th>
+                <th>Last Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {conversations.map((c) => (
+                <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => { window.location.href = `/conversations/${c.id}`; }}>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{c.leadName ?? c.leadEmail}</div>
+                    {c.leadName && <div className="ts">{c.leadEmail}</div>}
+                  </td>
+                  <td><Badge status={c.status} /></td>
+                  <td className="ts">{c.escalationReason?.replace(/_/g, " ") ?? "—"}</td>
+                  <td className="ts">{c.messages.length}</td>
+                  <td className="ts">{timeAgo(c.updatedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <Button appName="web" className={styles.secondary}>
-          Open alert
-        </Button>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://vercel.com/templates?search=turborepo&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://turborepo.dev?utm_source=create-turbo"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to turborepo.dev →
-        </a>
-      </footer>
-    </div>
+      )}
+    </>
   );
 }
