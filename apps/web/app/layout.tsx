@@ -26,6 +26,10 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <nav className="nav">
           <span className="nav-logo">SDR Agent</span>
+          <div style={{ display: "flex", gap: 20, marginLeft: 32 }}>
+            <a href="/" style={{ fontSize: 14, color: "var(--text-muted)" }}>Conversations</a>
+            <a href="/reps" style={{ fontSize: 14, color: "var(--text-muted)" }}>Sales Reps</a>
+          </div>
         </nav>
         <main className="main">{children}</main>
       </body>

@@ -5,6 +5,8 @@ import Link from "next/link";
 
 type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated";
 
+interface SalesRep { id: string; name: string; email: string; isActive: boolean; }
+
 interface ConversationMessage {
   role: "user" | "assistant" | "tool_use" | "tool_result";
   content: string;
@@ -22,6 +24,7 @@ interface Conversation {
   status: ConversationStatus;
   escalationReason?: string;
   draftReply?: string;
+  assignedRep?: SalesRep;
   createdAt: string;
   updatedAt: string;
   messages: ConversationMessage[];
@@ -33,10 +36,7 @@ function Badge({ status }: { status: ConversationStatus }) {
 }
 
 function MessageBubble({ msg }: { msg: ConversationMessage }) {
-  const isToolCall = msg.role === "tool_use";
-  const isToolResult = msg.role === "tool_result";
-
-  if (isToolCall) {
+  if (msg.role === "tool_use") {
     return (
       <div className="msg msg-tool_use">
         <div className="msg-label">Tool call → {msg.toolName}</div>
@@ -44,8 +44,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
       </div>
     );
   }
-
-  if (isToolResult) {
+  if (msg.role === "tool_result") {
     return (
       <div className="msg msg-tool_result">
         <div className="msg-label">Tool result ← {msg.toolName}</div>
@@ -53,7 +52,6 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
       </div>
     );
   }
-
   return (
     <div className={`msg msg-${msg.role}`}>
       <div className="msg-label">{msg.role === "user" ? "Prospect" : "Agent"}</div>
@@ -65,6 +63,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
 export default function ConversationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [reps, setReps] = useState<SalesRep[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [customReply, setCustomReply] = useState("");
@@ -72,9 +71,14 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
 
   async function load() {
     setLoading(true);
-    const res = await fetch(`/api/conversations/${id}`);
-    const data = (await res.json()) as Conversation | { error: string };
-    setConversation("id" in data ? data : null);
+    const [convRes, repsRes] = await Promise.all([
+      fetch(`/api/conversations/${id}`),
+      fetch("/api/reps"),
+    ]);
+    const convData = (await convRes.json()) as Conversation | { error: string };
+    const repsData = (await repsRes.json()) as SalesRep[];
+    setConversation("id" in convData ? convData : null);
+    setReps(Array.isArray(repsData) ? repsData : []);
     setLoading(false);
   }
 
@@ -101,6 +105,17 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
     setActionLoading(false);
   }
 
+  async function reassign(repId: string) {
+    setActionLoading(true);
+    await fetch(`/api/conversations/${id}?action=reassign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repId }),
+    });
+    await load();
+    setActionLoading(false);
+  }
+
   if (loading) return <p className="empty">Loading…</p>;
   if (!conversation) return <p className="empty">Conversation not found.</p>;
 
@@ -121,13 +136,38 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
             Escalation reason: <strong>{conversation.escalationReason.replace(/_/g, " ")}</strong>
           </p>
         )}
+
+        {/* Assigned rep */}
+        <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Assigned rep:</span>
+          {conversation.assignedRep ? (
+            <span style={{ fontSize: 13, fontWeight: 600 }}>
+              {conversation.assignedRep.name}
+              <span style={{ fontWeight: 400, color: "var(--text-muted)" }}> &lt;{conversation.assignedRep.email}&gt;</span>
+            </span>
+          ) : (
+            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Unassigned</span>
+          )}
+          <select
+            style={{ fontSize: 13, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--border)" }}
+            defaultValue=""
+            onChange={(e) => { if (e.target.value) void reassign(e.target.value); }}
+            disabled={actionLoading}
+          >
+            <option value="">Reassign…</option>
+            {reps.filter((r) => r.isActive).map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {conversation.status === "pending_review" && conversation.draftReply && (
         <div className="review-panel">
           <div className="review-title">Human Review Required</div>
           <div className="review-reason">
-            The agent escalated this conversation ({conversation.escalationReason?.replace(/_/g, " ")}). Review the draft reply below and approve, edit, or discard it.
+            The agent escalated this conversation ({conversation.escalationReason?.replace(/_/g, " ")}).
+            {conversation.assignedRep && ` Assigned to ${conversation.assignedRep.name} — they will be CC'd on the reply.`}
           </div>
           <div className="section-title">Draft reply</div>
           <div className="draft-body">{conversation.draftReply}</div>
@@ -147,7 +187,7 @@ export default function ConversationPage({ params }: { params: Promise<{ id: str
 
       {showCustom && (
         <div style={{ marginBottom: 24 }}>
-          <div className="section-title">Your reply</div>
+          <div className="section-title">Your reply{conversation.assignedRep ? ` (${conversation.assignedRep.name} will be CC'd)` : ""}</div>
           <textarea
             style={{ width: "100%", minHeight: 120, padding: 12, borderRadius: 6, border: "1px solid var(--border)", fontFamily: "inherit", fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}
             value={customReply}

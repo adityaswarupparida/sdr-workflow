@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 
 type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated";
 
+interface SalesRep { id: string; name: string; email: string; }
+
 interface Conversation {
   id: string;
   threadId: string;
@@ -11,6 +13,7 @@ interface Conversation {
   leadName?: string;
   status: ConversationStatus;
   escalationReason?: string;
+  assignedRep?: SalesRep;
   createdAt: string;
   updatedAt: string;
   messages: unknown[];
@@ -83,6 +86,7 @@ export default function HomePage() {
               <tr>
                 <th>Lead</th>
                 <th>Status</th>
+                <th>Assigned Rep</th>
                 <th>Escalation Reason</th>
                 <th>Messages</th>
                 <th>Last Updated</th>
@@ -96,6 +100,7 @@ export default function HomePage() {
                     {c.leadName && <div className="ts">{c.leadEmail}</div>}
                   </td>
                   <td><Badge status={c.status} /></td>
+                  <td className="ts">{c.assignedRep?.name ?? <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
                   <td className="ts">{c.escalationReason?.replace(/_/g, " ") ?? "—"}</td>
                   <td className="ts">{c.messages.length}</td>
                   <td className="ts">{timeAgo(c.updatedAt)}</td>

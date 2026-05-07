@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { SYSTEM_PROMPT } from "./system-prompt.js";
+import { SYSTEM_PROMPT, repContext } from "./system-prompt.js";
 import { TOOLS } from "./tools/index.js";
 import { dispatchTool } from "./dispatcher.js";
 import { getOrCreateConversation, appendMessage, markResolved, setEscalated } from "../db/store.js";
@@ -11,6 +11,7 @@ const MAX_TURNS = 10;
 
 export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> {
   const conversation = await getOrCreateConversation(inbound.threadId ?? `thread_${Date.now()}`, inbound.from);
+  const rep = conversation.assignedRep;
 
   const userMessage: ConversationMessage = {
     role: "user",
@@ -19,14 +20,11 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
   };
   await appendMessage(conversation.id, userMessage);
 
-  // Build Anthropic message history from stored conversation
   const messages: Anthropic.MessageParam[] = conversation.messages.map((m) => {
     if (m.role === "user") return { role: "user", content: m.content };
     if (m.role === "assistant") return { role: "assistant", content: m.content };
-    return { role: "user", content: m.content }; // fallback
+    return { role: "user", content: m.content };
   });
-
-  // Add the new inbound message
   messages.push({ role: "user", content: userMessage.content });
 
   const outcome: AgentOutcome = {
@@ -36,6 +34,14 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
     hubspotLogged: false,
   };
 
+  // Build system: static base (cached) + dynamic rep context (uncached, small)
+  const systemBlocks: Anthropic.TextBlockParam[] = [
+    { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+  ];
+  if (rep) {
+    systemBlocks.push({ type: "text", text: repContext(rep.name, rep.email) });
+  }
+
   let turn = 0;
 
   while (turn < MAX_TURNS) {
@@ -44,8 +50,7 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 2048,
-      // Cache the system prompt — it never changes across turns or conversations
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      system: systemBlocks,
       tools: TOOLS,
       messages,
     });
@@ -55,7 +60,6 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
       console.log(`[Cache] turn ${turn} — write: ${usage.cache_creation_input_tokens ?? 0}, read: ${usage.cache_read_input_tokens ?? 0}, uncached: ${usage.input_tokens}`);
     }
 
-    // Collect all content blocks from this response
     const assistantContent: Anthropic.ContentBlock[] = response.content;
     messages.push({ role: "assistant", content: assistantContent });
 
@@ -87,7 +91,11 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
           timestamp: new Date().toISOString(),
         });
 
-        const dispatched = await dispatchTool(toolUse.name, toolUse.input as Record<string, unknown>);
+        const dispatched = await dispatchTool(
+          toolUse.name,
+          toolUse.input as Record<string, unknown>,
+          rep?.email,
+        );
 
         await appendMessage(conversation.id, {
           role: "tool_result",
@@ -103,7 +111,6 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
           content: JSON.stringify(dispatched.result),
         });
 
-        // Track outcomes from tool results
         if (toolUse.name === "send_email") outcome.emailSent = true;
         if (toolUse.name === "hubspot_log_activity") outcome.hubspotLogged = true;
         if (toolUse.name === "schedule_followup") {
@@ -111,14 +118,10 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
           outcome.followupScheduled = { daysFromNow: inp.daysFromNow, reason: inp.reason };
         }
 
-        // Escalation — stop the loop immediately
         if (dispatched.escalation) {
           const reason = dispatched.escalation.reason as EscalationReason;
           console.log(`[Agent] ESCALATING → ${reason} (urgency: ${dispatched.escalation.urgency})`);
-          console.log(`[Agent] Draft reply for human review:\n${dispatched.escalation.draftReply ?? "(none)"}`);
-
           await setEscalated(conversation.id, reason, dispatched.escalation.draftReply);
-
           outcome.escalated = true;
           outcome.escalationReason = reason;
           outcome.draftReply = dispatched.escalation.draftReply;

@@ -1,4 +1,12 @@
 export const CREATE_TABLES = `
+  CREATE TABLE IF NOT EXISTS sales_reps (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    isActive INTEGER NOT NULL DEFAULT 1,
+    createdAt TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     threadId TEXT UNIQUE NOT NULL,
@@ -8,8 +16,10 @@ export const CREATE_TABLES = `
     status TEXT NOT NULL DEFAULT 'active',
     escalationReason TEXT,
     draftReply TEXT,
+    assignedRepId TEXT,
     createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    updatedAt TEXT NOT NULL,
+    FOREIGN KEY (assignedRepId) REFERENCES sales_reps(id)
   );
 
   CREATE TABLE IF NOT EXISTS followups (

@@ -12,7 +12,11 @@ interface DispatchResult {
   };
 }
 
-export async function dispatchTool(name: string, input: Record<string, unknown>): Promise<DispatchResult> {
+export async function dispatchTool(
+  name: string,
+  input: Record<string, unknown>,
+  repEmail?: string,
+): Promise<DispatchResult> {
   switch (name) {
     case "salesforce_get_contact": {
       const contact = await salesforce.getContact(input["email"] as string);
@@ -53,10 +57,13 @@ export async function dispatchTool(name: string, input: Record<string, unknown>)
     }
 
     case "send_email": {
+      // Always CC the assigned rep so they can track the conversation
+      const cc = repEmail ? [repEmail] : undefined;
       const result = await email.sendEmail({
         to: input["to"] as string,
         subject: input["subject"] as string,
         body: input["body"] as string,
+        cc,
       });
       return { result };
     }

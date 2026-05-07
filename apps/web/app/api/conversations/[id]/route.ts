@@ -29,5 +29,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json(await res.json(), { status: res.ok ? 200 : res.status });
   }
 
+  if (action === "reassign") {
+    const body = await req.json();
+    const res = await fetch(`${AGENT_SERVER}/conversations/${id}/reassign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return NextResponse.json(await res.json(), { status: res.ok ? 200 : res.status });
+  }
+
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }

@@ -5,7 +5,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
   const messageId = `msg_${Date.now()}`;
   const sentAt = new Date().toISOString();
   // Replace with nodemailer / SendGrid / Postmark when going real
-  console.log(`[Email] SENT → ${params.to}`);
+  console.log(`[Email] SENT → ${params.to}${params.cc?.length ? ` (CC: ${params.cc.join(", ")})` : ""}`);
   console.log(`  Subject: ${params.subject}`);
   console.log(`  Body: ${params.body.slice(0, 120)}...`);
   return { messageId, sentAt };

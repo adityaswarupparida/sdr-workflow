@@ -2,6 +2,7 @@ export interface SendEmailParams {
   to: string;
   subject: string;
   body: string;
+  cc?: string[];
   replyToMessageId?: string;
 }
 

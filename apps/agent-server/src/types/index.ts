@@ -47,6 +47,8 @@ export interface Conversation {
   status: ConversationStatus;
   escalationReason?: EscalationReason;
   draftReply?: string;
+  assignedRepId?: string;
+  assignedRep?: SalesRep;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +60,14 @@ export interface InboundEmail {
   threadId?: string;
   messageId?: string;
   receivedAt: string;
+}
+
+export interface SalesRep {
+  id: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  createdAt: string;
 }
 
 export interface AgentOutcome {
