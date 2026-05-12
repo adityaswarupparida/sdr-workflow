@@ -109,7 +109,7 @@ Bun.serve({
       // CC the assigned rep when approving a draft
       const cc = conversation.assignedRep ? [conversation.assignedRep.email] : undefined;
       const sent = await email.sendEmail({ to: conversation.leadEmail, subject: "Re: Follow-up", body: draft, cc });
-      const hs = hubspot.getContactByEmail(conversation.leadEmail);
+      const hs = await hubspot.getContactByEmail(conversation.leadEmail);
       if (hs) await hubspot.logEmailActivity(hs.id, "Re: Follow-up (approved)", draft);
 
       return json({ success: true, messageId: sent.messageId });
@@ -132,7 +132,7 @@ Bun.serve({
         cc,
       });
       await saveCustomReply(id, body.body);
-      const hs = hubspot.getContactByEmail(conversation.leadEmail);
+      const hs = await hubspot.getContactByEmail(conversation.leadEmail);
       if (hs) await hubspot.logEmailActivity(hs.id, body.subject ?? "Re: Your inquiry (manual)", body.body);
 
       return json({ success: true, messageId: sent.messageId });
