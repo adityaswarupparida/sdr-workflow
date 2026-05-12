@@ -1,5 +1,6 @@
 import type { Lead } from "../../types/index.js";
 import type { HubSpotContact, HubSpotActivity } from "./types.js";
+import { mockUpsertContact, mockLogEmailActivity, mockUpdateDealStage, mockGetContactByEmail } from "./mock.js";
 
 const HS_TOKEN = process.env["HUBSPOT_ACCESS_TOKEN"];
 const HS_BASE = "https://api.hubapi.com";
@@ -14,12 +15,6 @@ function hsHeaders(): HeadersInit {
     "Content-Type": "application/json",
   };
 }
-
-// ── Mock fallback ─────────────────────────────────────────────────────────────
-
-const mockContacts = new Map<string, HubSpotContact>();
-const mockActivities: HubSpotActivity[] = [];
-let mockActivityCounter = 0;
 
 // ── Contact ───────────────────────────────────────────────────────────────────
 
@@ -39,17 +34,7 @@ async function searchContactByEmail(email: string): Promise<HubSpotContact | nul
 }
 
 export async function upsertContact(lead: Lead): Promise<HubSpotContact> {
-  if (!isConfigured()) {
-    const existing = mockContacts.get(lead.email);
-    const [firstname, ...rest] = lead.name.split(" ");
-    const contact: HubSpotContact = {
-      id: existing?.id ?? `hs_${Date.now()}`,
-      properties: { firstname: firstname ?? "", lastname: rest.join(" "), email: lead.email, company: lead.company, jobtitle: lead.title, lifecyclestage: "lead" },
-    };
-    mockContacts.set(lead.email, contact);
-    console.log(`[HubSpot] Mock upsert contact: ${lead.email}`);
-    return contact;
-  }
+  if (!isConfigured()) return mockUpsertContact(lead);
 
   const [firstname, ...rest] = lead.name.split(" ");
   const properties = { firstname: firstname ?? "", lastname: rest.join(" "), email: lead.email, company: lead.company, jobtitle: lead.title, lifecyclestage: "lead" };
@@ -80,32 +65,15 @@ export async function upsertContact(lead: Lead): Promise<HubSpotContact> {
 // ── Email activity ────────────────────────────────────────────────────────────
 
 export async function logEmailActivity(contactId: string, subject: string, body: string): Promise<HubSpotActivity> {
-  if (!isConfigured()) {
-    const activity: HubSpotActivity = {
-      id: `act_${Date.now()}_${++mockActivityCounter}`,
-      type: "EMAIL",
-      properties: { hs_email_subject: subject, hs_email_text: body, hs_timestamp: new Date().toISOString() },
-    };
-    mockActivities.push(activity);
-    console.log(`[HubSpot] Mock log activity for contact ${contactId}: "${subject}"`);
-    return activity;
-  }
+  if (!isConfigured()) return mockLogEmailActivity(contactId, subject, body);
 
   try {
     const res = await fetch(`${HS_BASE}/crm/v3/objects/emails`, {
       method: "POST",
       headers: hsHeaders(),
       body: JSON.stringify({
-        properties: {
-          hs_email_direction: "EMAIL",
-          hs_email_status: "SENT",
-          hs_email_subject: subject,
-          hs_email_text: body,
-          hs_timestamp: Date.now(),
-        },
-        associations: [
-          { to: { id: contactId }, types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 198 }] },
-        ],
+        properties: { hs_email_direction: "EMAIL", hs_email_status: "SENT", hs_email_subject: subject, hs_email_text: body, hs_timestamp: Date.now() },
+        associations: [{ to: { id: contactId }, types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 198 }] }],
       }),
     });
 
@@ -126,15 +94,9 @@ export async function logEmailActivity(contactId: string, subject: string, body:
 // ── Deal stage ────────────────────────────────────────────────────────────────
 
 export async function updateDealStage(contactId: string, stage: string): Promise<void> {
-  if (!isConfigured()) {
-    console.log(`[HubSpot] Mock deal stage update for contact ${contactId} → ${stage}`);
-    return;
-  }
-  // Find deals associated with contact and update stage
-  const res = await fetch(
-    `${HS_BASE}/crm/v3/objects/contacts/${contactId}/associations/deals`,
-    { headers: hsHeaders() }
-  );
+  if (!isConfigured()) return mockUpdateDealStage(contactId, stage);
+
+  const res = await fetch(`${HS_BASE}/crm/v3/objects/contacts/${contactId}/associations/deals`, { headers: hsHeaders() });
   if (!res.ok) return;
   const data = await res.json() as { results: Array<{ id: string }> };
   for (const deal of data.results) {
@@ -147,8 +109,8 @@ export async function updateDealStage(contactId: string, stage: string): Promise
   console.log(`[HubSpot] Updated deal stage for contact ${contactId} → ${stage}`);
 }
 
-// Used by approve/reply routes to look up contact for activity logging
+// Used by approve/reply routes to fetch contact ID before logging activity
 export async function getContactByEmail(email: string): Promise<HubSpotContact | undefined> {
-  if (!isConfigured()) return mockContacts.get(email);
+  if (!isConfigured()) return mockGetContactByEmail(email);
   return (await searchContactByEmail(email)) ?? undefined;
 }
