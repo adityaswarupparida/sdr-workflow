@@ -18,6 +18,7 @@ export async function dispatchTool(
   name: string,
   input: Record<string, unknown>,
   repEmail?: string,
+  conversationId?: string,
 ): Promise<DispatchResult> {
   switch (name) {
     case "salesforce_get_contact": {
@@ -74,16 +75,16 @@ export async function dispatchTool(
       const leadId = input["leadId"] as string;
       const daysFromNow = input["daysFromNow"] as number;
       const reason = input["reason"] as string;
-      const conversationId = input["conversationId"] as string | undefined;
 
-      // Look up lead email from the conversation if not provided directly
+      // Use conversationId passed from the agent loop — reliable, agent doesn't need to track it
       const conv = conversationId ? getConversation(conversationId) : null;
-      const leadEmail = (input["leadEmail"] as string | undefined) ?? conv?.leadEmail ?? "unknown@lead.com";
+      const leadEmail = conv?.leadEmail ?? (input["leadEmail"] as string | undefined) ?? "unknown@lead.com";
+      const resolvedConvId = conversationId ?? "unknown";
 
       const scheduledFor = new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000).toISOString();
 
       const jobId = await scheduleFollowup(
-        { conversationId: conversationId ?? "unknown", leadEmail, leadId, reason, scheduledFor },
+        { conversationId: resolvedConvId, leadEmail, leadId, reason, scheduledFor },
         daysFromNow,
       );
 

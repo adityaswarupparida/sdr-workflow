@@ -96,6 +96,7 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
           toolUse.name,
           toolUse.input as Record<string, unknown>,
           rep?.email,
+          conversation.id,
         );
 
         await appendMessage(conversation.id, {
