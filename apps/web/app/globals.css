@@ -123,7 +123,22 @@ body {
   font-size: 13.5px;
   line-height: 1.5;
   letter-spacing: -0.005em;
-  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* Smooth cross-fade only while the theme is switching — applied as a temporary
+   class on <html>, removed ~320ms later so normal hover/click stay snappy. */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition:
+    background-color 0.28s ease,
+    color 0.28s ease,
+    border-color 0.28s ease,
+    fill 0.28s ease,
+    stroke 0.28s ease,
+    box-shadow 0.28s ease !important;
+  transition-delay: 0s !important;
 }
 
 /* Subtle paper grain — the texture that makes warm tones feel intentional */
@@ -177,7 +192,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-style: italic;
   font-weight: 600;
   font-size: 13px;
-  color: #100d08;
+  color: var(--base);
   letter-spacing: -0.04em;
   flex-shrink: 0;
   position: relative;

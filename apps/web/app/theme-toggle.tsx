@@ -14,9 +14,12 @@ export function ThemeToggle() {
 
   function toggle() {
     const next: Theme = theme === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
+    const root = document.documentElement;
+    root.classList.add("theme-switching");
+    root.setAttribute("data-theme", next);
     localStorage.setItem("sdr-theme", next);
     setTheme(next);
+    window.setTimeout(() => root.classList.remove("theme-switching"), 320);
   }
 
   return (
