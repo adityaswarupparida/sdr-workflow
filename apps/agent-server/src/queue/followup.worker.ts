@@ -13,10 +13,13 @@ export async function processFollowup(data: FollowupJobData): Promise<{ skipped?
     return { skipped: "conversation not found" };
   }
   if (conversation.status === "resolved") {
-    return { skipped: "already resolved — lead likely replied" };
+    return { skipped: "already resolved — lead replied before follow-up fired" };
   }
   if (conversation.status === "pending_review") {
     return { skipped: "pending human review — not following up automatically" };
+  }
+  if (conversation.status !== "follow_up_pending") {
+    return { skipped: `unexpected status: ${conversation.status}` };
   }
 
   console.log(`[Worker] Firing follow-up for ${data.leadEmail} — reason: ${data.reason}`);

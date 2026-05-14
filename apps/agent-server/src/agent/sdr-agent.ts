@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { SYSTEM_PROMPT, repContext } from "./system-prompt.js";
 import { TOOLS } from "./tools/index.js";
 import { dispatchTool } from "./dispatcher.js";
-import { getOrCreateConversation, appendMessage, markResolved, setEscalated } from "../db/store.js";
+import { getOrCreateConversation, appendMessage, markResolved, markFollowUpPending, setEscalated } from "../db/store.js";
 import { notifyEscalation } from "../notifications/index.js";
 import type { InboundEmail, AgentOutcome, EscalationReason, ConversationMessage } from "../types/index.js";
 
@@ -73,7 +73,12 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
           timestamp: new Date().toISOString(),
         });
       }
-      await markResolved(conversation.id);
+      // If a follow-up was scheduled, keep conversation active so the worker fires
+      if (outcome.followupScheduled) {
+        await markFollowUpPending(conversation.id);
+      } else {
+        await markResolved(conversation.id);
+      }
       break;
     }
 

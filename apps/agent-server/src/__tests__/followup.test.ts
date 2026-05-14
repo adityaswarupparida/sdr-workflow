@@ -2,7 +2,7 @@ import { describe, test, expect, spyOn } from "bun:test";
 
 process.env["DB_PATH"] = ":memory:";
 
-const { getOrCreateConversation, markResolved, setEscalated, createRep } = await import("../db/store.js");
+const { getOrCreateConversation, markResolved, markFollowUpPending, setEscalated, createRep } = await import("../db/store.js");
 const { processFollowup } = await import("../queue/followup.worker.js");
 
 const BASE_JOB = {
@@ -33,8 +33,9 @@ describe("processFollowup", () => {
     expect(result.skipped).toContain("pending human review");
   });
 
-  test("calls runSdrAgent when conversation is active", async () => {
+  test("calls runSdrAgent when conversation is follow_up_pending", async () => {
     const conv = await getOrCreateConversation("thread_active_fu", "prospect@acme.com");
+    await markFollowUpPending(conv.id);
 
     const agentModule = await import("../agent/sdr-agent.js");
     const spy = spyOn(agentModule, "runSdrAgent").mockResolvedValueOnce({
@@ -58,6 +59,7 @@ describe("processFollowup", () => {
 
   test("passes the follow-up reason as context to the agent", async () => {
     const conv = await getOrCreateConversation("thread_reason_fu", "lead@globex.io");
+    await markFollowUpPending(conv.id);
 
     const agentModule = await import("../agent/sdr-agent.js");
     const spy = spyOn(agentModule, "runSdrAgent").mockResolvedValueOnce({

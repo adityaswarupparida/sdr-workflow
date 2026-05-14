@@ -129,6 +129,10 @@ export async function markResolved(conversationId: string): Promise<void> {
   db.prepare("UPDATE conversations SET status = ?, updatedAt = ? WHERE id = ?").run("resolved", now(), conversationId);
 }
 
+export async function markFollowUpPending(conversationId: string): Promise<void> {
+  db.prepare("UPDATE conversations SET status = ?, updatedAt = ? WHERE id = ?").run("follow_up_pending", now(), conversationId);
+}
+
 export async function setEscalated(conversationId: string, reason: EscalationReason, draftReply?: string): Promise<void> {
   db.prepare("UPDATE conversations SET status = ?, escalationReason = ?, draftReply = ?, updatedAt = ? WHERE id = ?").run(
     "pending_review", reason, draftReply ?? null, now(), conversationId,

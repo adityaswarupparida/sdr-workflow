@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 
-type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated";
+type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending";
 
 interface SalesRep { id: string; name: string; email: string; isActive: boolean; }
 

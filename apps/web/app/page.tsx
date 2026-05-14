@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 
-type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated";
+type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending";
 
 interface SalesRep { id: string; name: string; email: string; }
 
@@ -22,12 +22,21 @@ interface Conversation {
 const TABS: { label: string; value: string }[] = [
   { label: "All", value: "" },
   { label: "Needs Review", value: "pending_review" },
+  { label: "Follow-up Pending", value: "follow_up_pending" },
   { label: "Active", value: "active" },
   { label: "Resolved", value: "resolved" },
 ];
 
+const STATUS_LABELS: Record<ConversationStatus, string> = {
+  active: "Active",
+  pending_review: "Needs Review",
+  resolved: "Resolved",
+  escalated: "Escalated",
+  follow_up_pending: "Follow-up Pending",
+};
+
 function Badge({ status }: { status: ConversationStatus }) {
-  const label = status === "pending_review" ? "Needs Review" : status;
+  const label = STATUS_LABELS[status] ?? status;
   return <span className={`badge badge-${status}`}>{label}</span>;
 }
 

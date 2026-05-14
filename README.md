@@ -31,6 +31,131 @@ SDR Agent (Claude claude-sonnet-4-6 + tool_use)
 
 ---
 
+## Diagrams
+
+### 1. Inbound Email Pipeline
+
+```mermaid
+sequenceDiagram
+    participant P as Prospect
+    participant G as Gmail
+    participant PM as Postmark
+    participant AS as Agent Server
+    participant SF as Salesforce
+    participant HS as HubSpot
+    participant DB as SQLite
+
+    P->>G: Sends email
+    G->>PM: Auto-forward
+    PM->>AS: POST /webhooks/email (parsed JSON)
+    AS->>DB: getOrCreateConversation(threadId)
+    AS->>DB: Assign rep (round-robin)
+    AS->>SF: salesforce_get_contact(email)
+    SF-->>AS: Lead + account info
+    AS->>SF: salesforce_get_opportunities(accountId)
+    SF-->>AS: Open deals
+    AS->>HS: hubspot_upsert_contact(lead)
+    HS-->>AS: contactId
+    AS->>DB: Persist messages + outcome
+```
+
+### 2. Agent Decision Flow
+
+```mermaid
+sequenceDiagram
+    participant W as Webhook
+    participant A as Agent (Claude)
+    participant SF as Salesforce
+    participant HS as HubSpot
+    participant E as Gmail SMTP
+    participant Q as BullMQ
+    participant H as Human Rep
+
+    W->>A: Inbound email (from, subject, body)
+    A->>SF: salesforce_get_contact(email)
+    SF-->>A: Lead + account info
+    A->>SF: salesforce_get_opportunities(accountId)
+    SF-->>A: Open deals
+    A->>HS: hubspot_upsert_contact(lead)
+    HS-->>A: contactId
+
+    alt Topic is in scope for SDR
+        A->>E: send_email(to, subject, body, cc: rep)
+        A->>HS: hubspot_log_activity(contactId, subject, body)
+        opt Follow-up needed
+            A->>Q: schedule_followup(leadId, daysFromNow, reason)
+            Note over A: status → follow_up_pending
+        end
+        Note over A: status → resolved
+    else Topic is out of scope
+        Note over A: pricing / technical / legal / existing customer / low confidence
+        A->>H: escalate_to_human(reason, draftReply, urgency)
+        A->>H: Slack notification + rep email
+        Note over A: status → pending_review
+    end
+```
+
+### 3. Escalation & Human Review Flow
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant DB as SQLite
+    participant SL as Slack
+    participant RE as Rep Email
+    participant H as Human Rep
+    participant AS as Agent Server
+    participant G as Gmail
+
+    A->>DB: setEscalated(reason, draftReply)
+    A->>SL: POST escalation notification
+    A->>RE: Send email to assigned rep
+    H->>AS: Opens dashboard → Needs Review tab
+    H->>AS: Reviews draft reply
+
+    alt Approve draft
+        H->>AS: POST /conversations/:id/approve
+        AS->>G: sendEmail(draft, CC: rep)
+        AS->>DB: status → resolved
+    else Edit and send
+        H->>AS: POST /conversations/:id/reply (custom body)
+        AS->>G: sendEmail(custom, CC: rep)
+        AS->>DB: status → resolved
+    end
+```
+
+### 4. Follow-up Scheduler Flow
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant Q as BullMQ Queue
+    participant R as Redis
+    participant W as Worker
+    participant DB as SQLite
+    participant G as Gmail
+
+    A->>Q: schedule_followup(leadId, daysFromNow, reason)
+    Q->>R: Add delayed job (delay = N days)
+    Note over R: Job persists in Redis across restarts
+
+    Note over W: N days later...
+    R->>W: Job delay expired → move to waiting
+    W->>DB: getConversation(conversationId)
+
+    alt status: resolved
+        W-->>W: skip — lead replied before follow-up fired
+    else status: follow_up_pending
+        W->>A: runSdrAgent(follow-up trigger)
+        A->>G: Send follow-up email
+        A->>DB: status → resolved (or follow_up_pending if another follow-up scheduled)
+    else status: pending_review
+        W-->>W: skip — human is reviewing
+    end
+```
+
+---
+
 ## Project Structure
 
 ```

@@ -14,6 +14,8 @@
   --badge-resolved-text: #166534;
   --badge-escalated: #fee2e2;
   --badge-escalated-text: #991b1b;
+  --badge-followup: #ede9fe;
+  --badge-followup-text: #5b21b6;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -93,6 +95,7 @@ tr:hover td { background: #f9fafb; }
 .badge-pending_review { background: var(--badge-pending); color: var(--badge-pending-text); }
 .badge-resolved { background: var(--badge-resolved); color: var(--badge-resolved-text); }
 .badge-escalated { background: var(--badge-escalated); color: var(--badge-escalated-text); }
+.badge-follow_up_pending { background: var(--badge-followup); color: var(--badge-followup-text); }
 
 /* Conversation detail */
 .back-link { font-size: 14px; color: var(--accent); margin-bottom: 20px; display: inline-block; }

@@ -10,7 +10,7 @@ process.env["FOLLOWUP_QUEUE_NAME"] = "sdr-followups-test";
 process.env["DB_PATH"] = ":memory:";
 
 const { startFollowupWorker } = await import("../queue/followup.worker.js");
-const { getOrCreateConversation, markResolved } = await import("../db/store.js");
+const { getOrCreateConversation, markResolved, markFollowUpPending } = await import("../db/store.js");
 const { scheduleFollowup, closeQueue, FOLLOWUP_QUEUE } = await import("../queue/followup.queue.js");
 const { Queue } = await import("bullmq");
 const { createRedisConnection } = await import("../queue/connection.js");
@@ -64,11 +64,12 @@ describe("follow-up scheduler (integration)", () => {
     const completed = waitForCompleted<{ skipped?: string }>(worker);
     await scheduleNow(conv, "Integration test");
 
-    expect((await completed).skipped).toBe("already resolved — lead likely replied");
+    expect((await completed).skipped).toBe("already resolved — lead replied before follow-up fired");
   }, 10000);
 
-  test.skipIf(!RUN)("fires the agent when conversation is active", async () => {
+  test.skipIf(!RUN)("fires the agent when conversation is follow_up_pending", async () => {
     const conv = await getOrCreateConversation("thread_integration_active", "active@test.com");
+    await markFollowUpPending(conv.id);
 
     // spyOn updates the ESM live binding, so processFollowup sees the stub when the worker fires.
     const agentModule = await import("../agent/sdr-agent.js");
@@ -76,16 +77,18 @@ describe("follow-up scheduler (integration)", () => {
       conversationId: conv.id, escalated: false, emailSent: false, hubspotLogged: false,
     });
 
-    const completed = waitForCompleted(worker);
-    await scheduleNow(conv, "No reply after demo");
-    await completed;
+    try {
+      const completed = waitForCompleted(worker);
+      await scheduleNow(conv, "No reply after demo");
+      await completed;
 
-    expect(agentSpy).toHaveBeenCalledTimes(1);
-    const [inbound] = agentSpy.mock.calls[0]!;
-    expect(inbound.from).toBe("active@test.com");
-    expect(inbound.threadId).toBe(conv.threadId);
-    expect(inbound.body).toContain("No reply after demo");
-
-    agentSpy.mockRestore();
+      expect(agentSpy).toHaveBeenCalledTimes(1);
+      const [inbound] = agentSpy.mock.calls[0]!;
+      expect(inbound.from).toBe("active@test.com");
+      expect(inbound.threadId).toBe(conv.threadId);
+      expect(inbound.body).toContain("No reply after demo");
+    } finally {
+      agentSpy.mockRestore();
+    }
   }, 10000);
 });
