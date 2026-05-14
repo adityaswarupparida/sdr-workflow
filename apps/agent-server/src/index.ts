@@ -2,10 +2,21 @@ import { handleInboundEmail } from "./webhooks/inbound-email.js";
 import { listConversations, getConversation, approveDraft, saveCustomReply, reassignConversation,
          listReps, getRep, createRep, updateRep, deleteRep } from "./db/store.js";
 import { seedReps } from "./db/seed.js";
+import { startFollowupWorker } from "./queue/followup.worker.js";
 import * as email from "./integrations/email/client.js";
 import * as hubspot from "./integrations/hubspot/client.js";
 
 seedReps();
+
+// Only start follow-up worker when REDIS_URL is explicitly configured
+if (process.env["REDIS_URL"]) {
+  const worker = startFollowupWorker();
+  worker.on("error", (err) => {
+    console.warn("[Worker] Redis error (follow-ups paused):", err.message);
+  });
+} else {
+  console.log("[Worker] REDIS_URL not set — follow-up scheduling disabled");
+}
 
 const PORT = process.env["PORT"] ? parseInt(process.env["PORT"]) : 3001;
 
@@ -40,11 +51,13 @@ Bun.serve({
     if (method === "POST" && url.pathname === "/webhooks/email") {
       try {
         const body = await req.json();
-        const outcome = await handleInboundEmail(body);
+        const outcome = await handleInboundEmail(body, url);
         return json({ success: true, outcome });
       } catch (err) {
+        const msg = String(err);
+        const status = msg.includes("Unauthorized") ? 401 : 400;
         console.error("[Webhook] Error:", err);
-        return json({ error: String(err) }, 400);
+        return json({ error: msg }, status);
       }
     }
 

@@ -80,13 +80,14 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "schedule_followup",
-    description: "Schedule a follow-up task for this lead.",
+    description: "Schedule a follow-up email for this lead to be sent automatically in N days.",
     input_schema: {
       type: "object" as const,
       properties: {
         leadId: { type: "string" },
-        daysFromNow: { type: "number", description: "How many days from today to follow up" },
-        reason: { type: "string", description: "Why we're following up" },
+        conversationId: { type: "string", description: "The current conversation ID" },
+        daysFromNow: { type: "number", description: "How many days from today to send the follow-up" },
+        reason: { type: "string", description: "Why we're following up (used as context when the follow-up fires)" },
       },
       required: ["leadId", "daysFromNow", "reason"],
     },

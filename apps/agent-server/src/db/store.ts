@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { CREATE_TABLES } from "./schema.js";
 import type { Conversation, ConversationMessage, ConversationStatus, EscalationReason, SalesRep } from "../types/index.js";
 
-const db = new Database("sdr.db", { create: true });
+const db = new Database(process.env["DB_PATH"] ?? "sdr.db", { create: true });
 db.run("PRAGMA journal_mode=WAL;");
 db.exec(CREATE_TABLES);
 
@@ -86,11 +86,11 @@ function rowToConversation(row: Record<string, unknown>): Conversation {
     id: row["id"] as string,
     threadId: row["threadId"] as string,
     leadEmail: row["leadEmail"] as string,
-    leadName: row["leadName"] as string | undefined,
+    leadName: (row["leadName"] as string | null) ?? undefined,
     messages: JSON.parse(row["messages"] as string) as ConversationMessage[],
     status: row["status"] as ConversationStatus,
-    escalationReason: row["escalationReason"] as EscalationReason | undefined,
-    draftReply: row["draftReply"] as string | undefined,
+    escalationReason: ((row["escalationReason"] as string | null) ?? undefined) as EscalationReason | undefined,
+    draftReply: (row["draftReply"] as string | null) ?? undefined,
     assignedRepId: repId,
     assignedRep: rep,
     createdAt: row["createdAt"] as string,

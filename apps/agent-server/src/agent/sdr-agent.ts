@@ -3,6 +3,7 @@ import { SYSTEM_PROMPT, repContext } from "./system-prompt.js";
 import { TOOLS } from "./tools/index.js";
 import { dispatchTool } from "./dispatcher.js";
 import { getOrCreateConversation, appendMessage, markResolved, setEscalated } from "../db/store.js";
+import { notifyEscalation } from "../notifications/index.js";
 import type { InboundEmail, AgentOutcome, EscalationReason, ConversationMessage } from "../types/index.js";
 
 const anthropic = new Anthropic({ apiKey: process.env["ANTHROPIC_API_KEY"] });
@@ -120,8 +121,20 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
 
         if (dispatched.escalation) {
           const reason = dispatched.escalation.reason as EscalationReason;
-          console.log(`[Agent] ESCALATING → ${reason} (urgency: ${dispatched.escalation.urgency})`);
+          const urgency = dispatched.escalation.urgency as "low" | "high";
+          console.log(`[Agent] ESCALATING → ${reason} (urgency: ${urgency})`);
           await setEscalated(conversation.id, reason, dispatched.escalation.draftReply);
+
+          // Fire Slack + email notifications — non-blocking, errors are logged not thrown
+          notifyEscalation({
+            conversationId: conversation.id,
+            leadEmail: conversation.leadEmail,
+            reason,
+            urgency,
+            assignedRep: rep ?? undefined,
+            draftReply: dispatched.escalation.draftReply,
+          }).catch((err) => console.error("[Notify] Unexpected error:", err));
+
           outcome.escalated = true;
           outcome.escalationReason = reason;
           outcome.draftReply = dispatched.escalation.draftReply;

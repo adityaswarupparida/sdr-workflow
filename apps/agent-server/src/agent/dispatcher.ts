@@ -1,6 +1,8 @@
 import * as salesforce from "../integrations/salesforce/client.js";
 import * as hubspot from "../integrations/hubspot/client.js";
 import * as email from "../integrations/email/client.js";
+import { scheduleFollowup } from "../queue/followup.queue.js";
+import { getConversation } from "../db/store.js";
 import type { Lead } from "../types/index.js";
 
 interface DispatchResult {
@@ -69,8 +71,23 @@ export async function dispatchTool(
     }
 
     case "schedule_followup": {
-      console.log(`[Followup] Scheduled for lead ${input["leadId"]} in ${input["daysFromNow"]} days: ${input["reason"]}`);
-      return { result: { scheduled: true, daysFromNow: input["daysFromNow"] } };
+      const leadId = input["leadId"] as string;
+      const daysFromNow = input["daysFromNow"] as number;
+      const reason = input["reason"] as string;
+      const conversationId = input["conversationId"] as string | undefined;
+
+      // Look up lead email from the conversation if not provided directly
+      const conv = conversationId ? getConversation(conversationId) : null;
+      const leadEmail = (input["leadEmail"] as string | undefined) ?? conv?.leadEmail ?? "unknown@lead.com";
+
+      const scheduledFor = new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000).toISOString();
+
+      const jobId = await scheduleFollowup(
+        { conversationId: conversationId ?? "unknown", leadEmail, leadId, reason, scheduledFor },
+        daysFromNow,
+      );
+
+      return { result: { scheduled: true, daysFromNow, jobId, scheduledFor } };
     }
 
     case "escalate_to_human": {
