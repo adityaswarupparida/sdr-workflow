@@ -1,159 +1,290 @@
-# Turborepo starter
+# SDR Agent
 
-This Turborepo starter is maintained by the Turborepo core team.
+An AI-powered Sales Development Representative that handles inbound emails, qualifies leads, pulls context from Salesforce, logs to HubSpot, and escalates out-of-scope conversations to human reps — autonomously and repeatably.
 
-## Using this example
+---
 
-Run the following command:
+## Architecture
 
-```sh
-npx create-turbo@latest
+```
+Prospect emails you
+       ↓
+Gmail receives it → auto-forwards to Postmark inbound address
+       ↓
+Postmark parses email → POST /webhooks/email
+       ↓
+SDR Agent (Claude claude-sonnet-4-6 + tool_use)
+  ├── salesforce_get_contact     → fetch prospect context
+  ├── salesforce_get_opportunities → fetch open deals
+  ├── hubspot_upsert_contact     → ensure contact exists
+  │
+  ├── [In scope]
+  │   ├── send_email             → Gmail SMTP reply (CC: assigned rep)
+  │   ├── hubspot_log_activity   → log sent email
+  │   └── schedule_followup      → BullMQ delayed job (N days)
+  │
+  └── [Out of scope]
+      └── escalate_to_human      → draft saved, Slack + email notification fired
+                                    → "Needs Review" queue in dashboard
+                                    → human approves / edits / discards
 ```
 
-## What's inside?
+---
 
-This Turborepo includes the following packages/apps:
+## Project Structure
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```
+sdr-workflow/
+  apps/
+    agent-server/          # Bun HTTP server — agent orchestration (port 3001)
+      src/
+        agent/             # Claude SDK agentic loop, tools, system prompt
+        integrations/
+          salesforce/      # client.ts (real API) + mock.ts (seed data)
+          hubspot/         # client.ts (real API) + mock.ts (in-memory)
+          email/           # client.ts (nodemailer + Postmark inbound parser)
+        db/                # SQLite store (bun:sqlite) — conversations, reps, followups
+        notifications/     # Slack + email escalation notifications
+        queue/             # BullMQ follow-up scheduler (Redis)
+        webhooks/          # Postmark inbound parser + secret validation
+        __tests__/         # Bun unit + integration tests
+    web/                   # Next.js dashboard (port 3000)
+      app/
+        page.tsx           # Conversation list (All / Needs Review / Active / Resolved)
+        conversations/[id] # Conversation detail + tool timeline + approve/discard UI
+        reps/              # Sales rep roster management
 ```
 
-Without global `turbo`, use your package manager:
+---
 
-```sh
-cd my-turborepo
-npx turbo build
-bun dlx turbo build
-bun exec turbo build
+## Setup
+
+### 1. Install dependencies
+
+```bash
+bun install
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### 2. Environment variables
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+Copy `.env.example` to `.env` and fill in the values:
 
-```sh
-turbo build --filter=docs
+```bash
+cp .env.example .env
 ```
 
-Without global `turbo`:
+| Variable | Where to get it |
+|----------|----------------|
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
+| `GMAIL_USER` | Your Gmail address |
+| `GMAIL_APP_PASSWORD` | Google Account → Security → App Passwords |
+| `POSTMARK_SERVER_TOKEN` | [postmarkapp.com](https://postmarkapp.com) → Server → API Tokens |
+| `WEBHOOK_SECRET` | Any random string — append as `?secret=` to your Postmark inbound URL |
+| `SF_CLIENT_ID` | Salesforce Setup → App Manager → Connected App → Consumer Key |
+| `SF_CLIENT_SECRET` | Salesforce Setup → App Manager → Connected App → Consumer Secret |
+| `SF_REFRESH_TOKEN` | One-time OAuth flow (see Salesforce setup below) |
+| `HUBSPOT_ACCESS_TOKEN` | HubSpot → Settings → Integrations → Private Apps |
+| `SLACK_WEBHOOK_URL` | [api.slack.com/apps](https://api.slack.com/apps) → Incoming Webhooks |
+| `REDIS_URL` | `redis://localhost:6379` or Upstash URL |
+| `DASHBOARD_URL` | Your dashboard public URL (used in Slack notification links) |
 
-```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
+### 3. Salesforce OAuth (one-time)
+
+```bash
+# 1. Generate PKCE values
+VERIFIER=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-43)
+CHALLENGE=$(echo -n $VERIFIER | openssl dgst -sha256 -binary | openssl base64 | tr -d "=" | tr "+/" "-_")
+
+# 2. Open in browser (replace CLIENT_ID and CHALLENGE)
+# https://login.salesforce.com/services/oauth2/authorize?response_type=code
+#   &client_id=CLIENT_ID&redirect_uri=http://localhost:3001/oauth/callback
+#   &code_challenge=CHALLENGE&code_challenge_method=S256
+
+# 3. Copy the code from the redirect URL, then exchange:
+curl -X POST https://login.salesforce.com/services/oauth2/token \
+  -d "grant_type=authorization_code" \
+  -d "client_id=YOUR_CLIENT_ID" \
+  -d "client_secret=YOUR_CLIENT_SECRET" \
+  -d "redirect_uri=http://localhost:3001/oauth/callback" \
+  -d "code=CODE_FROM_URL" \
+  -d "code_verifier=$VERIFIER"
+# Copy refresh_token from response → SF_REFRESH_TOKEN
 ```
 
-### Develop
+### 4. HubSpot Private App scopes
 
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
+When creating the Private App, select these scopes:
+```
+crm.objects.contacts.read
+crm.objects.contacts.write
+crm.objects.deals.read
+crm.objects.deals.write
 ```
 
-Without global `turbo`, use your package manager:
+### 5. Inbound email (Gmail → Postmark)
 
-```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
+1. Get your Postmark inbound address from **postmarkapp.com → your server → Inbound**
+2. Set your Postmark webhook URL to: `https://your-domain.com/webhooks/email?secret=YOUR_WEBHOOK_SECRET`
+3. Gmail → Settings → Forwarding → Add forwarding address → paste Postmark inbound address
+
+For local dev, expose the server with [ngrok](https://ngrok.com): `ngrok http 3001`
+
+### 6. Start Redis
+
+```bash
+# Docker
+docker run -d -p 6379:6379 redis
+
+# Homebrew
+brew services start redis
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+---
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Running
 
-```sh
-turbo dev --filter=web
+```bash
+# Start everything (agent-server + dashboard + docs)
+bun dev
+
+# Agent server only (port 3001)
+cd apps/agent-server && bun run dev
+
+# Dashboard only (port 3000)
+cd apps/web && bun run dev
 ```
 
-Without global `turbo`:
+---
 
-```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
+## Testing
+
+```bash
+cd apps/agent-server
+
+# Unit tests (no external services needed)
+bun run test
+
+# Integration tests (requires Redis)
+REDIS_URL=redis://localhost:6379 DB_PATH=:memory: bun test src/__tests__/followup.integration.test.ts
+
+# Watch mode
+bun run test:watch
 ```
 
-### Remote Caching
+---
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+## Email Flows
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+### Happy path (agent handles autonomously)
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
+```bash
+curl -X POST localhost:3001/webhooks/email \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "alex.rivera@acme.com",
+    "subject": "Tell me about your platform",
+    "body": "Hi, we have 500 engineers evaluating tools."
+  }'
+# → emailSent: true, escalated: false
 ```
 
-Without global `turbo`, use your package manager:
+### Escalation path (out of scope — human review required)
 
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
+```bash
+curl -X POST localhost:3001/webhooks/email \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "alex.rivera@acme.com",
+    "subject": "Pricing question",
+    "body": "What does enterprise pricing look like? We need a custom contract."
+  }'
+# → escalated: true, emailSent: false
+# → Slack notification fired, rep emailed, conversation in "Needs Review" tab
 ```
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+### Approve a draft
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
+```bash
+curl -X POST localhost:3001/conversations/<id>/approve
+# → Email sent with rep CC'd, HubSpot logged, status → resolved
 ```
 
-Without global `turbo`:
+### Follow-up scheduling
 
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
+```bash
+curl -X POST localhost:3001/webhooks/email \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "alex.rivera@acme.com",
+    "subject": "Not the right time",
+    "body": "Budget cycle starts in Q3. Check back then."
+  }'
+# → Agent replies, schedules follow-up job in Redis for ~60 days
 ```
 
-## Useful Links
+---
 
-Learn more about the power of Turborepo:
+## API Routes
 
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/webhooks/email` | Inbound email trigger |
+| `GET` | `/conversations` | List conversations (`?status=pending_review`) |
+| `GET` | `/conversations/:id` | Full conversation + tool timeline |
+| `POST` | `/conversations/:id/approve` | Approve draft → send email |
+| `POST` | `/conversations/:id/reply` | Human sends custom reply |
+| `POST` | `/conversations/:id/reassign` | Reassign to different rep |
+| `GET` | `/reps` | List sales reps |
+| `POST` | `/reps` | Add a rep |
+| `PUT` | `/reps/:id` | Update rep |
+| `DELETE` | `/reps/:id` | Remove rep |
+| `GET` | `/health` | Health check |
+
+---
+
+## Escalation Reasons
+
+| Reason | Routes to |
+|--------|-----------|
+| `pricing_or_quote` | Account Executive |
+| `technical_deep_dive` | Solutions Engineer |
+| `existing_customer` | Customer Success |
+| `legal_or_contract` | Legal |
+| `low_confidence` | Assigned Rep |
+
+---
+
+## Integrations
+
+All integrations fall back to mock data when credentials are not set — the full agent pipeline works in dev without any external accounts.
+
+| Service | Purpose | Fallback |
+|---------|---------|---------|
+| Salesforce | Prospect + opportunity context | Seed data (Alex Rivera, Jordan Kim) |
+| HubSpot | Contact upsert, deal stage, activity logging | In-memory Map |
+| Gmail SMTP | Outbound email sending | Console log |
+| Postmark | Inbound email parsing + webhook | Manual curl |
+| Slack | Escalation notifications | Console log |
+| Redis / BullMQ | Follow-up scheduling | Disabled (warns on startup) |
+
+---
+
+## In Scope vs Out of Scope
+
+**In scope** — topics an SDR rep handles day-to-day:
+- General product questions ("what does your platform do?")
+- Discovery questions ("how many engineers do you have?")
+- Scheduling a demo or intro call
+- Following up after no response
+- Qualifying the lead
+
+**Out of scope** — topics that need a different person:
+- Pricing / custom quotes → Account Executive
+- Technical deep-dives (architecture, integrations, latency) → Solutions Engineer
+- "We're already a customer" → Customer Success
+- Contracts, NDAs, compliance → Legal
+- Anything the agent isn't confident about → Rep reviews
+
+The agent decides this itself based on the system prompt rules. When it detects an out-of-scope topic, it stops, drafts a reply anyway, and puts the conversation in the "Needs Review" queue instead of sending autonomously.
+
+The idea is — **the agent only acts alone when it's confident it's doing the right thing**. Everything else it hands off to a human with a suggested draft.
