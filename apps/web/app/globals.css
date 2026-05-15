@@ -188,12 +188,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: var(--accent);
   border-radius: var(--r-sm);
   display: grid; place-items: center;
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--base);
-  letter-spacing: -0.04em;
+  color: white;
   flex-shrink: 0;
   position: relative;
   box-shadow: 0 0 22px var(--accent-glow);

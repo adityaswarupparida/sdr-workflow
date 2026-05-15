@@ -50,11 +50,11 @@ sequenceDiagram
     PM->>AS: POST /webhooks/email (parsed JSON)
     AS->>DB: getOrCreateConversation(threadId)
     AS->>DB: Assign rep (round-robin)
-    AS->>SF: salesforce_get_contact(email)
+    AS->>SF: Get or create prospect (contact + account)
     SF-->>AS: Lead + account info
-    AS->>SF: salesforce_get_opportunities(accountId)
+    AS->>SF: Get open opportunities
     SF-->>AS: Open deals
-    AS->>HS: hubspot_upsert_contact(lead)
+    AS->>HS: Sync contact
     HS-->>AS: contactId
     AS->>DB: Persist messages + outcome
 ```
@@ -72,25 +72,28 @@ sequenceDiagram
     participant H as Human Rep
 
     W->>A: Inbound email (from, subject, body)
-    A->>SF: salesforce_get_contact(email)
-    SF-->>A: Lead + account info
-    A->>SF: salesforce_get_opportunities(accountId)
-    SF-->>A: Open deals
-    A->>HS: hubspot_upsert_contact(lead)
+    A->>SF: Get or create prospect
+    SF-->>A: Lead + account info + open deals
+    A->>HS: Sync contact
     HS-->>A: contactId
 
     alt Topic is in scope for SDR
         A->>E: send_email(to, subject, body, cc: rep)
-        A->>HS: hubspot_log_activity(contactId, subject, body)
+        A->>HS: hubspot_log_activity
         opt Follow-up needed
-            A->>Q: schedule_followup(leadId, daysFromNow, reason)
+            A->>Q: schedule_followup(daysFromNow, reason)
             Note over A: status → follow_up_pending
         end
+        A->>A: log_summary
         Note over A: status → resolved
-    else Topic is out of scope
-        Note over A: pricing / technical / legal / existing customer / low confidence
+    else Topic needs specialist (pricing / legal / technical / existing customer)
+        A->>A: log_summary
         A->>H: escalate_to_human(reason, draftReply, urgency)
-        A->>H: Slack notification + rep email
+        A->>H: Slack + email notification
+        Note over A: status → escalated
+    else Low confidence
+        A->>A: log_summary
+        A->>H: escalate_to_human(low_confidence, draftReply)
         Note over A: status → pending_review
     end
 ```
@@ -107,19 +110,23 @@ sequenceDiagram
     participant AS as Agent Server
     participant G as Gmail
 
+    A->>DB: log_summary (before handing off)
     A->>DB: setEscalated(reason, draftReply)
-    A->>SL: POST escalation notification
-    A->>RE: Send email to assigned rep
-    H->>AS: Opens dashboard → Needs Review tab
+    A->>SL: Escalation notification
+    A->>RE: Email assigned rep
+
+    H->>AS: Opens dashboard
     H->>AS: Reviews draft reply
 
-    alt Approve draft
+    alt Specialist escalation (pricing / legal / technical / CS)
         H->>AS: POST /conversations/:id/approve
         AS->>G: sendEmail(draft, CC: rep)
-        AS->>DB: status → resolved
-    else Edit and send
-        H->>AS: POST /conversations/:id/reply (custom body)
-        AS->>G: sendEmail(custom, CC: rep)
+        AS->>DB: appendSummaryAction — "Transferred to AE / Legal / SE / CS"
+        AS->>DB: status → transferred
+    else Low confidence (rep review)
+        H->>AS: POST /conversations/:id/approve or /reply
+        AS->>G: sendEmail(draft or custom, CC: rep)
+        AS->>DB: appendSummaryAction — "Human Approved / Rep Reply"
         AS->>DB: status → resolved
     end
 ```
@@ -135,23 +142,55 @@ sequenceDiagram
     participant DB as SQLite
     participant G as Gmail
 
-    A->>Q: schedule_followup(leadId, daysFromNow, reason)
-    Q->>R: Add delayed job (delay = N days)
-    Note over R: Job persists in Redis across restarts
+    A->>Q: schedule_followup(daysFromNow, reason)
+    Q->>R: Add delayed job
+    Note over R: Persists across restarts
 
     Note over W: N days later...
-    R->>W: Job delay expired → move to waiting
+    R->>W: Delay expired → job moves to waiting
     W->>DB: getConversation(conversationId)
 
-    alt status: resolved
-        W-->>W: skip — lead replied before follow-up fired
-    else status: follow_up_pending
+    alt status: follow_up_pending
         W->>A: runSdrAgent(follow-up trigger)
         A->>G: Send follow-up email
-        A->>DB: status → resolved (or follow_up_pending if another follow-up scheduled)
-    else status: pending_review
-        W-->>W: skip — human is reviewing
+        A->>DB: status → resolved (or follow_up_pending if re-scheduled)
+    else status: resolved
+        W-->>W: skip — lead replied before follow-up fired
+    else status: pending_review or escalated or transferred
+        W-->>W: skip — human is handling this
     end
+```
+
+### 5. Conversation Status Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant C as Conversation
+    participant A as Agent
+    participant H as Human
+    participant W as Worker
+
+    Note over C: active (on creation)
+    A->>C: Agent sends email, no follow-up
+    Note over C: resolved
+
+    Note over C: active (on creation)
+    A->>C: Agent sends email + schedules follow-up
+    Note over C: follow_up_pending
+    W->>C: Follow-up fires N days later
+    Note over C: resolved
+
+    Note over C: active (on creation)
+    A->>C: Specialist escalation (pricing / legal / technical / CS)
+    Note over C: escalated
+    H->>C: Rep approves / sends reply
+    Note over C: transferred
+
+    Note over C: active (on creation)
+    A->>C: Low confidence escalation
+    Note over C: pending_review
+    H->>C: Rep approves / sends reply
+    Note over C: resolved
 ```
 
 ---

@@ -611,6 +611,7 @@ function DetailInner({ id }: { id: string }) {
           <span className="topbar-title">{conversation.leadName ?? conversation.leadEmail}</span>
           <div className="topbar-actions">
             <Badge status={conversation.status} />
+            <button className="btn-icon" onClick={() => void load()} title="Refresh">↻</button>
           </div>
         </div>
 
