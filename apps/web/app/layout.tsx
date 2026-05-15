@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { ThemeToggle } from "./theme-toggle";
+import { ThemeToggle } from "../components/theme-toggle";
 
 const fraunces = Fraunces({
   subsets: ["latin"],

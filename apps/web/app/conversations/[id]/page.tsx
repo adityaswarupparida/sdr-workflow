@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { BrandLogo } from "../../brand-logo";
+import { BrandLogo } from "../../../components/brand-logo";
 
 type Role = "manager" | "rep";
 type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending";
