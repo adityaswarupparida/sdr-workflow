@@ -5,7 +5,7 @@ import { seedReps } from "./db/seed.js";
 import { startFollowupWorker } from "./queue/followup.worker.js";
 import * as email from "./integrations/email/client.js";
 import * as hubspot from "./integrations/hubspot/client.js";
-import { handleSignin, handleMe, handleCreateUser } from "./auth/handlers.js";
+import { handleSignin, handleMe, handleCreateUser, handleChangePassword } from "./auth/handlers.js";
 import { requireAuth, requireRole, AuthError } from "./auth/middleware.js";
 import { seedAdmin } from "./auth/seed.js";
 import type { AuthContext } from "./types/index.js";
@@ -80,6 +80,7 @@ Bun.serve({
       // (await so AuthError rejections are caught by the outer try/catch)
       if (method === "POST" && url.pathname === "/auth/signin")        return await handleSignin(req);
       if (method === "GET"  && url.pathname === "/auth/me")            return await handleMe(req);
+      if (method === "POST" && url.pathname === "/auth/me/password")   return await handleChangePassword(req);
       if (method === "POST" && url.pathname === "/auth/users")         return await handleCreateUser(req);
 
       // ── Sales Reps ────────────────────────────────────────────────────────────

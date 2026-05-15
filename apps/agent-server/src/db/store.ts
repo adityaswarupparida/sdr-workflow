@@ -219,3 +219,8 @@ export function hasAnyAdmin(): boolean {
   const row = db.prepare("SELECT 1 FROM users WHERE role = 'admin' LIMIT 1").get();
   return row !== null;
 }
+
+export function updateUserPassword(userId: string, passwordHash: string): boolean {
+  const r = db.prepare("UPDATE users SET passwordHash = ? WHERE id = ?").run(passwordHash, userId);
+  return r.changes > 0;
+}

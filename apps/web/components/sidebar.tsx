@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SessionUser } from "../hooks/use-session";
+import { ChangePasswordModal } from "./change-password-modal";
+import { AddUserModal } from "./add-user-modal";
 
 export function initials(name: string): string {
   return name.split(" ").map(p => p[0]).join("").toUpperCase().slice(0, 2);
@@ -15,6 +18,8 @@ export function Sidebar({ user, pendingCount = 0, page }: {
   const router = useRouter();
   const isRep = user.role === "rep";
   const isAdmin = user.role === "admin";
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [showAddUser, setShowAddUser] = useState(false);
 
   async function signOut() {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -52,10 +57,20 @@ export function Sidebar({ user, pendingCount = 0, page }: {
               <div className="user-chip-role">{user.role}</div>
             </div>
           </div>
-          <button className="btn btn-ghost">Sign out</button>
+          <div className="sidebar-actions">
+            {isAdmin && (
+              <button className="sidebar-action-link" onClick={() => setShowAddUser(true)}>+ New user</button>
+            )}
+            <button className="sidebar-action-link" onClick={() => setShowChangePw(true)}>Change password</button>
+            <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 4 }} onClick={() => void signOut()}>
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
+      <ChangePasswordModal open={showChangePw} onClose={() => setShowChangePw(false)} />
+      <AddUserModal open={showAddUser} onClose={() => setShowAddUser(false)} />
     </>
   );
 }

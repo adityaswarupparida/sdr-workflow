@@ -7,7 +7,7 @@ process.env["JWT_SECRET"] = "test-secret-at-least-sixteen-chars-long";
 const { hash, verify } = await import("../auth/passwords.js");
 const { signToken, verifyToken } = await import("../auth/jwt.js");
 const { requireAuth, requireRole, AuthError, getAuth } = await import("../auth/middleware.js");
-const { handleSignin, handleMe, handleCreateUser } = await import("../auth/handlers.js");
+const { handleSignin, handleMe, handleCreateUser, handleChangePassword } = await import("../auth/handlers.js");
 const { createUser, createRep, getOrCreateConversation, reassignConversation, listConversations, getConversation } = await import("../db/store.js");
 
 function bearer(token: string): Request {
@@ -353,5 +353,58 @@ describe("conversation scopeToRepId", () => {
   test("getConversation for a non-existent id returns null with or without scope", async () => {
     expect(getConversation("conv_does_not_exist")).toBeNull();
     expect(getConversation("conv_does_not_exist", "rep_anything")).toBeNull();
+  });
+});
+
+// ── Change password ─────────────────────────────────────────────────────────────
+
+describe("changePassword handler", () => {
+  async function authedReq(token: string, body: unknown): Promise<Request> {
+    return new Request("http://test/auth/me/password", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test("changes the password when current is correct", async () => {
+    const created = createUser(`pw-good-${Date.now()}`, await hash("oldpassword"), "manager");
+    const token = await signToken({ userId: created.id, username: created.username, role: "manager" });
+    const res = await handleChangePassword(await authedReq(token, { currentPassword: "oldpassword", newPassword: "newpassword" }));
+    expect(res.status).toBe(200);
+    // Verify the new password works for signin
+    const signin = await handleSignin(new Request("http://test/auth/signin", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: created.username, password: "newpassword" }),
+    }));
+    expect(signin.status).toBe(200);
+  });
+
+  test("rejects when current password is wrong (401)", async () => {
+    const created = createUser(`pw-wrong-${Date.now()}`, await hash("realpassword"), "manager");
+    const token = await signToken({ userId: created.id, username: created.username, role: "manager" });
+    const res = await handleChangePassword(await authedReq(token, { currentPassword: "guessing", newPassword: "newpassword" }));
+    expect(res.status).toBe(401);
+  });
+
+  test("rejects when new password is too short (400)", async () => {
+    const created = createUser(`pw-short-${Date.now()}`, await hash("oldpassword"), "manager");
+    const token = await signToken({ userId: created.id, username: created.username, role: "manager" });
+    const res = await handleChangePassword(await authedReq(token, { currentPassword: "oldpassword", newPassword: "abc" }));
+    expect(res.status).toBe(400);
+  });
+
+  test("rejects when new password equals current (400)", async () => {
+    const created = createUser(`pw-same-${Date.now()}`, await hash("samepassword"), "manager");
+    const token = await signToken({ userId: created.id, username: created.username, role: "manager" });
+    const res = await handleChangePassword(await authedReq(token, { currentPassword: "samepassword", newPassword: "samepassword" }));
+    expect(res.status).toBe(400);
+  });
+
+  test("rejects unauthenticated request with 401", async () => {
+    let caught: AuthErrorType | null = null;
+    try { await handleChangePassword(new Request("http://test/auth/me/password", { method: "POST", body: "{}" })); }
+    catch (e) { caught = e as AuthErrorType; }
+    expect(caught?.status).toBe(401);
   });
 });

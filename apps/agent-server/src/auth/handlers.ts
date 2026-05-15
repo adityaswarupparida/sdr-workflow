@@ -1,4 +1,4 @@
-import { createUser, getUserById, getUserByUsername, getRep } from "../db/store.js";
+import { createUser, getUserById, getUserByUsername, getRep, updateUserPassword } from "../db/store.js";
 import { hash, verify } from "./passwords.js";
 import { signToken } from "./jwt.js";
 import { requireAuth, requireRole, AuthError } from "./middleware.js";
@@ -71,6 +71,33 @@ export async function handleCreateUser(req: Request): Promise<Response> {
 
   const user = createUser(username, await hash(password), role as UserRole, repId);
   return json(user, 201);
+}
+
+export async function handleChangePassword(req: Request): Promise<Response> {
+  const ctx = await requireAuth(req);
+  const body = (await req.json().catch(() => ({}))) as { currentPassword?: unknown; newPassword?: unknown };
+  const current = typeof body.currentPassword === "string" ? body.currentPassword : "";
+  const next = typeof body.newPassword === "string" ? body.newPassword : "";
+
+  if (!current || next.length < 6) {
+    return json({ error: "currentPassword and newPassword (min 6 chars) are required" }, 400);
+  }
+
+  // Need the hash to verify — getUserById strips it, so re-fetch by username.
+  const meById = getUserById(ctx.userId);
+  if (!meById) throw new AuthError(401, "User no longer exists");
+  const meWithHash = getUserByUsername(meById.username);
+  if (!meWithHash) throw new AuthError(401, "User no longer exists");
+
+  const ok = await verify(current, meWithHash.passwordHash);
+  if (!ok) return json({ error: "Current password is incorrect" }, 401);
+
+  if (current === next) {
+    return json({ error: "New password must be different from the current one" }, 400);
+  }
+
+  updateUserPassword(meWithHash.id, await hash(next));
+  return json({ success: true });
 }
 
 function json(data: unknown, status = 200): Response {
