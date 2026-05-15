@@ -49,6 +49,7 @@ export interface Conversation {
   draftReply?: string;
   assignedRepId?: string;
   assignedRep?: SalesRep;
+  summary?: ConversationSummary;
   createdAt: string;
   updatedAt: string;
 }
@@ -70,6 +71,18 @@ export interface SalesRep {
   createdAt: string;
 }
 
+export interface SummaryAction {
+  step: string;
+  detail: string;
+}
+
+export interface ConversationSummary {
+  leadStatus: "new" | "contacted" | "qualified" | "unqualified";
+  actions: SummaryAction[];
+  notes?: string;
+  nextAction?: string;
+}
+
 export interface AgentOutcome {
   conversationId: string;
   escalated: boolean;
@@ -78,6 +91,7 @@ export interface AgentOutcome {
   emailSent: boolean;
   hubspotLogged: boolean;
   followupScheduled?: { daysFromNow: number; reason: string };
+  summary?: ConversationSummary;
 }
 
 export type UserRole = "admin" | "manager" | "rep";

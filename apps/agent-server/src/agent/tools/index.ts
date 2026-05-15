@@ -110,7 +110,42 @@ export const TOOLS: Anthropic.Tool[] = [
       },
       required: ["reason", "urgency"],
     },
-    // Cache breakpoint: everything up to and including the tool list is cached across turns
+  },
+  {
+    name: "log_summary",
+    description: "REQUIRED final step. Call this after all other tools are complete to log a structured summary of what was done in this conversation. Always call this last.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        leadStatus: {
+          type: "string",
+          enum: ["new", "contacted", "qualified", "unqualified"],
+          description: "Current qualification status of the lead",
+        },
+        actions: {
+          type: "array",
+          description: "Ordered list of actions taken, one entry per significant step",
+          items: {
+            type: "object",
+            properties: {
+              step: { type: "string", description: "Short action label e.g. 'Salesforce Lookup', 'Email Sent', 'Follow-up Scheduled'" },
+              detail: { type: "string", description: "One-line detail e.g. 'Priya Nair · TechWave · 80 engineers'" },
+            },
+            required: ["step", "detail"],
+          },
+        },
+        notes: {
+          type: "string",
+          description: "1-2 sentences of context for the rep reviewing this later — what matters, what to watch for",
+        },
+        nextAction: {
+          type: "string",
+          description: "What happens next: e.g. 'Awaiting reply', 'Follow-up May 19', 'Human review required'",
+        },
+      },
+      required: ["leadStatus", "actions"],
+    },
+    // Cache breakpoint: tool list is fully cached across turns
     cache_control: { type: "ephemeral" as const },
   },
 ];

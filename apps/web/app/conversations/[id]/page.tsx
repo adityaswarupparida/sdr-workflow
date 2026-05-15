@@ -14,11 +14,58 @@ interface ConversationMessage {
   role: "user" | "assistant" | "tool_use" | "tool_result";
   content: string; toolName?: string; toolInput?: unknown; toolResult?: unknown; timestamp: string;
 }
+interface SummaryAction { step: string; detail: string; }
+interface ConversationSummary {
+  leadStatus: "new" | "contacted" | "qualified" | "unqualified";
+  actions: SummaryAction[];
+  notes?: string;
+  nextAction?: string;
+}
+
 interface Conversation {
   id: string; threadId: string; leadEmail: string; leadName?: string;
   status: ConversationStatus; escalationReason?: string; draftReply?: string;
   assignedRep?: SalesRep; messages: ConversationMessage[];
+  summary?: ConversationSummary;
   createdAt: string; updatedAt: string;
+}
+
+const LEAD_STATUS_LABELS: Record<string, string> = {
+  new: "New", contacted: "Contacted", qualified: "Qualified", unqualified: "Unqualified",
+};
+
+function SummaryCard({ summary }: { summary: ConversationSummary }) {
+  return (
+    <div className="summary-card">
+      <div className="summary-card-header">
+        <span className="summary-card-label">◈ AI Summary</span>
+        <span className="summary-lead-status">
+          {LEAD_STATUS_LABELS[summary.leadStatus] ?? summary.leadStatus}
+        </span>
+      </div>
+
+      <div className="summary-actions">
+        {summary.actions.map((action, i) => (
+          <div key={i} className="summary-action">
+            <span className="summary-action-num">{String(i + 1).padStart(2, "0")}</span>
+            <span className="summary-action-step">{action.step}</span>
+            <span className="summary-action-detail">{action.detail}</span>
+          </div>
+        ))}
+      </div>
+
+      {summary.notes && (
+        <div className="summary-notes">{summary.notes}</div>
+      )}
+
+      {summary.nextAction && (
+        <div className="summary-next-row">
+          <span className="summary-next-label">Next</span>
+          <span className="summary-next-value">{summary.nextAction}</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
@@ -53,6 +100,7 @@ type ToolConfig = {
 
 const TOOL_CONFIG: Record<string, ToolConfig> = {
   salesforce_get_contact:       { label: "Salesforce Lookup",         cls: "tc-sf",       brand: "salesforce.co" },
+  salesforce_create_contact:    { label: "Salesforce · New Contact",  cls: "tc-sf",       brand: "salesforce.co" },
   salesforce_get_opportunities: { label: "Salesforce Opportunities",  cls: "tc-sf",       brand: "salesforce.co" },
   hubspot_upsert_contact:       { label: "HubSpot · Sync Contact",    cls: "tc-hs",       brand: "hubspot.com" },
   hubspot_log_activity:         { label: "HubSpot · Log Activity",    cls: "tc-hs",       brand: "hubspot.com" },
@@ -77,6 +125,10 @@ function summarize(
       if (!out || "error" in out) return "Contact not found";
       const lead = out as { name?: string; company?: string };
       return [lead.name, lead.company].filter(Boolean).join(" · ") || "Found";
+    }
+    case "salesforce_create_contact": {
+      const created = out as { name?: string; company?: string; id?: string };
+      return [created.name, created.company].filter(Boolean).join(" · ") || "Contact created";
     }
     case "salesforce_get_opportunities": {
       const opps = Array.isArray(out) ? out : [];
@@ -144,6 +196,31 @@ function ToolCard({ entry }: { entry: ToolEntry }) {
 
   function renderBody() {
     switch (toolName) {
+      case "salesforce_create_contact": {
+        const created = out as { name?: string; email?: string; company?: string; title?: string; id?: string } | null;
+        return (
+          <>
+            {created?.name && <div className="tool-hero">{created.name}</div>}
+            {created?.company && <div className="tool-hero-sub">{created.company}{created.title ? ` · ${created.title}` : ""}</div>}
+            <div className="tool-stats">
+              <div>
+                <div className="tool-stat-key">Email</div>
+                <div className="tool-stat-val">{inp?.email as string ?? created?.email ?? "—"}</div>
+              </div>
+              {created?.id && (
+                <div>
+                  <div className="tool-stat-key">SF ID</div>
+                  <div className="tool-stat-val mono">{created.id}</div>
+                </div>
+              )}
+              <div>
+                <div className="tool-stat-key">Status</div>
+                <div className="tool-stat-val" style={{ color: "var(--positive)", fontWeight: 600 }}>✓ Created</div>
+              </div>
+            </div>
+          </>
+        );
+      }
       case "salesforce_get_contact": {
         if (!out || "error" in out) {
           return <div className="tool-hero-sub" style={{ marginTop: 14 }}>Contact not found in Salesforce.</div>;
@@ -646,6 +723,13 @@ function DetailInner({ id }: { id: string }) {
                 </div>
               ))}
             </div>
+
+            {conversation.summary && (
+              <>
+                <div className="section-label" style={{ marginTop: 20 }}>Summary</div>
+                <SummaryCard summary={conversation.summary} />
+              </>
+            )}
 
           </div>
         </div>

@@ -124,6 +124,7 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
           const inp = toolUse.input as { daysFromNow: number; reason: string };
           outcome.followupScheduled = { daysFromNow: inp.daysFromNow, reason: inp.reason };
         }
+        if (dispatched.summary) outcome.summary = dispatched.summary;
 
         if (dispatched.escalation) {
           const reason = dispatched.escalation.reason as EscalationReason;

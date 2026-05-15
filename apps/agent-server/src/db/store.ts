@@ -1,16 +1,18 @@
 import { Database } from "bun:sqlite";
 import { CREATE_TABLES } from "./schema.js";
-import type { Conversation, ConversationMessage, ConversationStatus, EscalationReason, SalesRep, User, UserRole, UserWithHash } from "../types/index.js";
+import type { Conversation, ConversationMessage, ConversationStatus, EscalationReason, SalesRep, ConversationSummary, User, UserRole, UserWithHash } from "../types/index.js";
 
 const db = new Database(process.env["DB_PATH"] ?? "sdr.db", { create: true });
 db.run("PRAGMA journal_mode=WAL;");
 db.exec(CREATE_TABLES);
 
-// Migrate existing DBs that predate the assignedRepId column
-try {
-  db.run("ALTER TABLE conversations ADD COLUMN assignedRepId TEXT REFERENCES sales_reps(id)");
-} catch {
-  // Column already exists — safe to ignore
+// Migrate existing DBs that predate added columns
+const MIGRATIONS = [
+  "ALTER TABLE conversations ADD COLUMN assignedRepId TEXT REFERENCES sales_reps(id)",
+  "ALTER TABLE conversations ADD COLUMN summary TEXT",
+];
+for (const sql of MIGRATIONS) {
+  try { db.run(sql); } catch { /* column already exists */ }
 }
 
 function now(): string {
@@ -93,9 +95,16 @@ function rowToConversation(row: Record<string, unknown>): Conversation {
     draftReply: (row["draftReply"] as string | null) ?? undefined,
     assignedRepId: repId,
     assignedRep: rep,
+    summary: row["summary"] ? JSON.parse(row["summary"] as string) as ConversationSummary : undefined,
     createdAt: row["createdAt"] as string,
     updatedAt: row["updatedAt"] as string,
   };
+}
+
+export async function saveSummary(conversationId: string, summary: ConversationSummary): Promise<void> {
+  db.prepare("UPDATE conversations SET summary = ?, updatedAt = ? WHERE id = ?").run(
+    JSON.stringify(summary), now(), conversationId,
+  );
 }
 
 export async function getOrCreateConversation(threadId: string, leadEmail: string): Promise<Conversation> {

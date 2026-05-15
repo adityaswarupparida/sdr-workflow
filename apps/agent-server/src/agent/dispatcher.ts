@@ -2,8 +2,8 @@ import * as salesforce from "../integrations/salesforce/client.js";
 import * as hubspot from "../integrations/hubspot/client.js";
 import * as email from "../integrations/email/client.js";
 import { scheduleFollowup } from "../queue/followup.queue.js";
-import { getConversation } from "../db/store.js";
-import type { Lead } from "../types/index.js";
+import { getConversation, saveSummary } from "../db/store.js";
+import type { Lead, ConversationSummary } from "../types/index.js";
 
 interface DispatchResult {
   result: unknown;
@@ -12,6 +12,7 @@ interface DispatchResult {
     draftReply?: string;
     urgency: string;
   };
+  summary?: ConversationSummary;
 }
 
 export async function dispatchTool(
@@ -100,6 +101,18 @@ export async function dispatchTool(
           urgency: input["urgency"] as string,
         },
       };
+    }
+
+    case "log_summary": {
+      const summary: ConversationSummary = {
+        leadStatus: (input["leadStatus"] as ConversationSummary["leadStatus"]) ?? "new",
+        actions: (input["actions"] as ConversationSummary["actions"]) ?? [],
+        notes: input["notes"] as string | undefined,
+        nextAction: input["nextAction"] as string | undefined,
+      };
+      if (conversationId) await saveSummary(conversationId, summary);
+      console.log(`[Summary] Logged for conversation ${conversationId ?? "unknown"}`);
+      return { result: { logged: true }, summary };
     }
 
     default:

@@ -17,6 +17,7 @@ export const CREATE_TABLES = `
     escalationReason TEXT,
     draftReply TEXT,
     assignedRepId TEXT,
+    summary TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     FOREIGN KEY (assignedRepId) REFERENCES sales_reps(id)

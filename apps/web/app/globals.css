@@ -1491,3 +1491,76 @@ input, textarea, select { font-family: inherit; color: inherit; }
 /* Compat */
 @keyframes up { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ── AI Summary Card ───────────────────────────────────────────────────────── */
+.summary-card {
+  background: var(--surface-0);
+  border: 1px solid var(--border-md);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-lg);
+  padding: 16px 20px;
+  margin-top: 8px;
+  animation: up 0.25s ease both;
+}
+
+.summary-card-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+}
+.summary-card-label {
+  font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--accent); font-family: var(--font-mono, monospace);
+  flex: 1;
+}
+
+.summary-lead-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 99px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--accent-dim); color: var(--accent-light);
+  border: 1px solid rgba(240,160,64,0.18);
+}
+
+.summary-actions { display: flex; flex-direction: column; }
+
+.summary-action {
+  display: grid; grid-template-columns: 16px auto 1fr; gap: 0 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--border);
+  align-items: baseline;
+}
+.summary-action:last-child { border-bottom: none; }
+
+.summary-action-num {
+  font-size: 9px; font-weight: 700; color: var(--text-3);
+  font-family: var(--font-mono, monospace);
+}
+.summary-action-step {
+  font-size: 10px; font-weight: 700; color: var(--text-2);
+  text-transform: uppercase; letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+.summary-action-detail {
+  font-size: 12px; color: var(--text-1); line-height: 1.4;
+  padding-left: 2px;
+}
+
+.summary-notes {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--text-2); line-height: 1.65;
+  font-style: italic;
+}
+
+.summary-next-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.summary-next-label {
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--text-3);
+}
+.summary-next-value {
+  font-size: 11px; color: var(--accent-light);
+  background: var(--accent-dim); padding: 2px 9px;
+  border-radius: 99px; border: 1px solid rgba(240,160,64,0.15);
+}
