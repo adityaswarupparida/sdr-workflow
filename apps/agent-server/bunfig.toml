@@ -1,0 +1,3 @@
+# Always run tests with in-memory DB so test data never touches sdr.db
+[test.env]
+DB_PATH = ":memory:"

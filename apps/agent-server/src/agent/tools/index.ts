@@ -13,6 +13,21 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "salesforce_create_contact",
+    description: "Create a new contact in Salesforce. Only call this when salesforce_get_contact returned not found. Infer firstName, lastName, and company from the email address or email body if not explicitly stated.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        email:     { type: "string", description: "The prospect's email address" },
+        firstName: { type: "string", description: "First name — infer from email or body if needed" },
+        lastName:  { type: "string", description: "Last name — infer from email or body if needed" },
+        company:   { type: "string", description: "Company name — infer from email domain if not stated" },
+        title:     { type: "string", description: "Job title if mentioned" },
+      },
+      required: ["email", "firstName", "lastName", "company"],
+    },
+  },
+  {
     name: "salesforce_get_opportunities",
     description: "Get open opportunities for a Salesforce account. Use the accountId from salesforce_get_contact.",
     input_schema: {

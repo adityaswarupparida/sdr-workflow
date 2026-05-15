@@ -1,5 +1,5 @@
 import type { Lead, Opportunity, LeadStatus, DealStage } from "../../types/index.js";
-import { mockGetContact, mockGetOpportunities, mockUpdateLeadStatus } from "./mock.js";
+import { mockGetContact, mockGetOpportunities, mockUpdateLeadStatus, mockCreateContact } from "./mock.js";
 
 // ── Token management ──────────────────────────────────────────────────────────
 
@@ -110,6 +110,72 @@ export async function getOpportunities(accountId: string): Promise<Opportunity[]
     id: r.Id, accountId: r.AccountId, name: r.Name,
     stage: toDealStage(r.StageName), amount: r.Amount, closeDate: r.CloseDate,
   }));
+}
+
+// Look up a Salesforce Account by name. Returns the Account ID or null.
+async function findAccountByName(name: string): Promise<string | null> {
+  const records = await sfQuery<{ Id: string }>(
+    `SELECT Id FROM Account WHERE Name = '${name.replace(/'/g, "\\'")}' LIMIT 1`
+  );
+  return records[0]?.Id ?? null;
+}
+
+// Create a new Salesforce Account and return its ID.
+async function createAccount(name: string): Promise<string> {
+  const token = await getAccessToken();
+  const res = await fetch(`${token.instanceUrl}/services/data/v59.0/sobjects/Account`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ Name: name }),
+  });
+  if (!res.ok) throw new Error(`Salesforce create account failed: ${res.status} ${await res.text()}`);
+  const data = await res.json() as { id: string };
+  console.log(`[Salesforce] Created account: "${name}" (id: ${data.id})`);
+  return data.id;
+}
+
+// Find or create an Account, then create a Contact linked to it.
+export async function createContact(fields: {
+  email: string; firstName: string; lastName: string; company: string; title?: string;
+}): Promise<Lead> {
+  if (!isConfigured()) return mockCreateContact(fields);
+
+  // 1. Resolve account — find existing or create new
+  let accountId = await findAccountByName(fields.company);
+  if (!accountId) {
+    accountId = await createAccount(fields.company);
+  }
+
+  // 2. Create contact linked to the account
+  const token = await getAccessToken();
+  const body: Record<string, string> = {
+    FirstName: fields.firstName,
+    LastName: fields.lastName,
+    Email: fields.email,
+    AccountId: accountId,
+  };
+  if (fields.title) body["Title"] = fields.title;
+
+  const res = await fetch(`${token.instanceUrl}/services/data/v59.0/sobjects/Contact`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token.accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) throw new Error(`Salesforce create contact failed: ${res.status} ${await res.text()}`);
+
+  const data = await res.json() as { id: string };
+  console.log(`[Salesforce] Created contact: ${fields.email} (id: ${data.id}, accountId: ${accountId})`);
+
+  return {
+    id: data.id,
+    name: `${fields.firstName} ${fields.lastName}`.trim(),
+    email: fields.email,
+    company: fields.company,
+    title: fields.title ?? "",
+    accountId,
+    status: "new",
+  };
 }
 
 export async function updateLeadStatus(leadId: string, status: LeadStatus): Promise<void> {

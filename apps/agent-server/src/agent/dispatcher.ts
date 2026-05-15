@@ -27,6 +27,17 @@ export async function dispatchTool(
       return { result: contact ?? { error: "Contact not found in Salesforce" } };
     }
 
+    case "salesforce_create_contact": {
+      const contact = await salesforce.createContact({
+        email:     input["email"] as string,
+        firstName: input["firstName"] as string,
+        lastName:  input["lastName"] as string,
+        company:   input["company"] as string,
+        title:     input["title"] as string | undefined,
+      });
+      return { result: contact };
+    }
+
     case "salesforce_get_opportunities": {
       const opps = await salesforce.getOpportunities(input["accountId"] as string);
       return { result: opps };

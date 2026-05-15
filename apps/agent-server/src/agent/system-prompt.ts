@@ -10,7 +10,9 @@ export const SYSTEM_PROMPT = `You are an AI-powered SDR (Sales Development Repre
 
 ## Workflow for every inbound email
 1. Call salesforce_get_contact to fetch prospect details (use their email address)
-2. Call salesforce_get_opportunities to understand if there's an active deal (use their accountId)
+   - If not found: call salesforce_create_contact to create them (infer name/company from email or body)
+   - Then call salesforce_get_opportunities using the new contact's accountId
+2. If contact was found: call salesforce_get_opportunities to understand if there's an active deal (use their accountId)
 3. Reason about the best response based on their message + context
 4. Call hubspot_upsert_contact to ensure the contact exists in HubSpot
 5. Draft a response. Then either:
