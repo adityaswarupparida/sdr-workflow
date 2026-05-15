@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "../hooks/use-session";
+import { Sidebar, initials } from "../components/sidebar";
 
-type Role = "manager" | "rep";
 type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending";
 
 interface SalesRep { id: string; name: string; email: string; isActive: boolean; }
@@ -36,57 +37,8 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}d`;
 }
 
-function initials(name: string) {
-  return name.split(" ").map(p => p[0]).join("").toUpperCase().slice(0, 2);
-}
-
 function Badge({ status }: { status: ConversationStatus }) {
   return <span className={`badge badge-${status}`}>{STATUS_LABELS[status]}</span>;
-}
-
-// ── Shared Sidebar ─────────────────────────────────────────────────────────────
-function Sidebar({ role, onRoleChange, reps, selectedRepId, onRepChange, pendingCount, page }: {
-  role: Role; onRoleChange: (r: Role) => void;
-  reps: SalesRep[]; selectedRepId: string; onRepChange: (id: string) => void;
-  pendingCount: number; page: "conversations" | "reps";
-}) {
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-mark">SDR</div>
-        <div className="sidebar-logo-text">Agent</div>
-      </div>
-
-      <nav className="sidebar-nav">
-        <span className="sidebar-section-label">Workspace</span>
-        <a href="/" className={`sidebar-link${page === "conversations" ? " active" : ""}`}>
-          <span className="sidebar-link-icon">◈</span>
-          Conversations
-          {pendingCount > 0 && <span className="sidebar-link-badge">{pendingCount}</span>}
-        </a>
-        <a href="/reps" className={`sidebar-link${page === "reps" ? " active" : ""}`}>
-          <span className="sidebar-link-icon">◎</span>
-          Sales Reps
-        </a>
-      </nav>
-
-      <div className="sidebar-bottom">
-        <div className="sidebar-bottom-label">View As</div>
-        <div className="role-toggle">
-          <button className={`role-btn${role === "manager" ? " active" : ""}`} onClick={() => onRoleChange("manager")}>Manager</button>
-          <button className={`role-btn${role === "rep" ? " active" : ""}`} onClick={() => onRoleChange("rep")}>Rep</button>
-        </div>
-        {role === "rep" && (
-          <select className="rep-selector" value={selectedRepId} onChange={e => onRepChange(e.target.value)}>
-            <option value="">Select rep…</option>
-            {reps.filter(r => r.isActive).map(r => (
-              <option key={r.id} value={r.id}>{r.name}</option>
-            ))}
-          </select>
-        )}
-      </div>
-    </aside>
-  );
 }
 
 // ── Manager View ───────────────────────────────────────────────────────────────
@@ -156,7 +108,7 @@ function ManagerView({ conversations, reps, onOpen }: {
               {reps.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
             <span className="toolbar-spacer" />
-            <span style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "var(--font-geist-mono)" }}>
+            <span style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>
               {filtered.length} result{filtered.length !== 1 ? "s" : ""}
             </span>
           </div>
@@ -195,7 +147,7 @@ function ManagerView({ conversations, reps, onOpen }: {
                         </div>
                       ) : <span className="td-meta" style={{ color: "var(--text-3)" }}>—</span>}
                     </td>
-                    <td className="td-meta" style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11 }}>
+                    <td className="td-meta" style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
                       {c.escalationReason ? c.escalationReason.replace(/_/g, " ") : "—"}
                     </td>
                     <td className="td-meta">{(c.messages as unknown[]).length}</td>
@@ -207,7 +159,6 @@ function ManagerView({ conversations, reps, onOpen }: {
           </div>
         </div>
 
-        {/* Workload panel */}
         <div className="workload-panel">
           <div className="workload-title">Rep Workload</div>
           {repLoad.length === 0 ? (
@@ -238,13 +189,12 @@ function RepView({ conversations, rep, onOpen }: {
     return (
       <div className="empty-state">
         <div className="empty-state-icon">◎</div>
-        <div className="empty-state-text">Select a rep from the sidebar to view their pipeline.</div>
+        <div className="empty-state-text">Your account isn&apos;t linked to a sales rep yet. Ask your admin to set it up.</div>
       </div>
     );
   }
 
   const mine = conversations
-    .filter(c => c.assignedRep?.id === rep.id)
     .sort((a, b) => PRIORITY_ORDER.indexOf(a.status) - PRIORITY_ORDER.indexOf(b.status));
 
   const grouped = PRIORITY_ORDER.reduce<Record<string, Conversation[]>>((acc, s) => {
@@ -279,7 +229,7 @@ function RepView({ conversations, rep, onOpen }: {
       {mine.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">✓</div>
-          <div className="empty-state-text">No open cases for {rep.name}.</div>
+          <div className="empty-state-text">No open cases for you right now.</div>
         </div>
       ) : PRIORITY_ORDER.filter(s => grouped[s]?.length).map(status => (
         <div key={status} className="priority-section">
@@ -316,64 +266,55 @@ function RepView({ conversations, rep, onOpen }: {
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter();
-  const [role, setRole] = useState<Role>("manager");
-  const [selectedRepId, setSelectedRepId] = useState("");
+  const { user, loading: sessionLoading } = useSession();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [reps, setReps] = useState<SalesRep[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const r = localStorage.getItem("sdr-role") as Role | null;
-    const rid = localStorage.getItem("sdr-rep-id") ?? "";
-    if (r) setRole(r);
-    setSelectedRepId(rid);
-  }, []);
-
-  const handleRole = (r: Role) => { setRole(r); localStorage.setItem("sdr-role", r); };
-  const handleRep  = (id: string) => { setSelectedRepId(id); localStorage.setItem("sdr-rep-id", id); };
-
   const load = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
-    const [cr, rr] = await Promise.all([fetch("/api/conversations"), fetch("/api/reps")]);
-    const cd = await cr.json() as Conversation[] | { error: string };
-    const rd = await rr.json() as SalesRep[];
+    const [cr, rr] = await Promise.all([
+      fetch("/api/conversations"),
+      // reps only relevant for manager/admin view
+      user.role === "rep" ? Promise.resolve({ json: async () => [] as SalesRep[] }) : fetch("/api/reps"),
+    ]);
+    const cd = (await cr.json()) as Conversation[] | { error: string };
+    const rd = (await rr.json()) as SalesRep[];
     setConversations(Array.isArray(cd) ? cd : []);
     setReps(Array.isArray(rd) ? rd : []);
     setLoading(false);
-  }, []);
+  }, [user]);
 
   useEffect(() => { void load(); }, [load]);
 
-  const pendingCount = conversations.filter(c => c.status === "pending_review").length;
-  const selectedRep  = reps.find(r => r.id === selectedRepId);
+  if (sessionLoading || !user) return <div className="login-shell"><div className="loading-row">Loading…</div></div>;
 
-  function open(id: string) {
-    router.push(`/conversations/${id}?role=${role}${selectedRepId ? `&repId=${selectedRepId}` : ""}`);
-  }
+  const pendingCount = conversations.filter(c => c.status === "pending_review").length;
+  const myRep = user.repId ? (reps.find(r => r.id === user.repId)
+                          ?? (conversations.find(c => c.assignedRep?.id === user.repId)?.assignedRep)) : undefined;
+
+  function open(id: string) { router.push(`/conversations/${id}`); }
 
   return (
     <div className="shell">
-      <Sidebar
-        role={role} onRoleChange={handleRole}
-        reps={reps} selectedRepId={selectedRepId} onRepChange={handleRep}
-        pendingCount={pendingCount} page="conversations"
-      />
+      <Sidebar user={user} pendingCount={pendingCount} page="conversations" />
       <div className="main-content">
         <div className="topbar">
           <span className="topbar-title">
-            {role === "manager" ? "Conversations" : `${selectedRep?.name ?? "Select a rep"}`}
+            {user.role === "rep" ? (myRep?.name ?? user.username) : "Conversations"}
           </span>
           <div className="topbar-actions">
-            <button className="btn-icon" onClick={() => void load()}>↻</button>
+            <button className="btn-icon" onClick={() => void load()} aria-label="Refresh">↻</button>
           </div>
         </div>
         <div className="page-body">
           {loading ? (
             <div className="loading-row">Loading…</div>
-          ) : role === "manager" ? (
-            <ManagerView conversations={conversations} reps={reps} onOpen={open} />
+          ) : user.role === "rep" ? (
+            <RepView conversations={conversations} rep={myRep} onOpen={open} />
           ) : (
-            <RepView conversations={conversations} rep={selectedRep} onOpen={open} />
+            <ManagerView conversations={conversations} reps={reps} onOpen={open} />
           )}
         </div>
       </div>

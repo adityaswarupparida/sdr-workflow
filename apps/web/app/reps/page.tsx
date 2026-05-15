@@ -1,47 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-
-type Role = "manager" | "rep";
+import { useRouter } from "next/navigation";
+import { Sidebar, initials } from "../../components/sidebar";
+import { useSession } from "../../hooks/use-session";
 
 interface SalesRep { id: string; name: string; email: string; isActive: boolean; createdAt: string; }
-
-function initials(name: string) {
-  return name.split(" ").map(p => p[0]).join("").toUpperCase().slice(0, 2);
-}
 
 function timeAgo(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function Sidebar({ role, onRoleChange }: { role: Role; onRoleChange: (r: Role) => void }) {
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-mark">SDR</div>
-        <div className="sidebar-logo-text">Agent</div>
-      </div>
-      <nav className="sidebar-nav">
-        <span className="sidebar-section-label">Workspace</span>
-        <a href="/" className="sidebar-link">
-          <span className="sidebar-link-icon">◈</span>
-          Conversations
-        </a>
-        <a href="/reps" className="sidebar-link active">
-          <span className="sidebar-link-icon">◎</span>
-          Sales Reps
-        </a>
-      </nav>
-      <div className="sidebar-bottom">
-        <div className="sidebar-bottom-label">View As</div>
-        <div className="role-toggle">
-          <button className={`role-btn${role === "manager" ? " active" : ""}`} onClick={() => onRoleChange("manager")}>Manager</button>
-          <button className={`role-btn${role === "rep" ? " active" : ""}`} onClick={() => onRoleChange("rep")}>Rep</button>
-        </div>
-      </div>
-    </aside>
-  );
 }
 
 // ── Add Rep Modal ──────────────────────────────────────────────────────────────
@@ -119,21 +87,20 @@ function AddRepModal({
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function RepsPage() {
+  const router = useRouter();
+  const { user, loading: sessionLoading } = useSession();
   const [reps, setReps] = useState<SalesRep[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [role, setRole] = useState<Role>("manager");
   const [showAdd, setShowAdd] = useState(false);
 
+  // Reps don't get to see the roster — bounce them home
   useEffect(() => {
-    const r = localStorage.getItem("sdr-role") as Role | null;
-    if (r) setRole(r);
-  }, []);
-
-  const handleRole = (r: Role) => { setRole(r); localStorage.setItem("sdr-role", r); };
+    if (!sessionLoading && user && user.role === "rep") router.replace("/");
+  }, [sessionLoading, user, router]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -142,7 +109,7 @@ export default function RepsPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (user && user.role !== "rep") void load(); }, [load, user]);
 
   function openAdd() {
     setName(""); setEmail(""); setError("");
@@ -187,9 +154,13 @@ export default function RepsPage() {
   const active   = reps.filter(r => r.isActive);
   const inactive = reps.filter(r => !r.isActive);
 
+  if (sessionLoading || !user || user.role === "rep") {
+    return <div className="login-shell"><div className="loading-row">Loading…</div></div>;
+  }
+
   return (
     <div className="shell">
-      <Sidebar role={role} onRoleChange={handleRole} />
+      <Sidebar user={user} page="reps" />
 
       <div className="main-content">
         <div className="topbar">

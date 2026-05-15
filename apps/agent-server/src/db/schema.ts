@@ -30,4 +30,15 @@ export const CREATE_TABLES = `
     done INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (conversationId) REFERENCES conversations(id)
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    passwordHash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'rep')),
+    repId TEXT,
+    createdAt TEXT NOT NULL,
+    FOREIGN KEY (repId) REFERENCES sales_reps(id) ON DELETE SET NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 `;

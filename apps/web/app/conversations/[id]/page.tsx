@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Suspense } from "react";
 import { BrandLogo } from "../../../components/brand-logo";
+import { Sidebar, initials } from "../../../components/sidebar";
+import { useSession } from "../../../hooks/use-session";
 
-type Role = "manager" | "rep";
 type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending";
 
 interface SalesRep { id: string; name: string; email: string; isActive: boolean; }
@@ -35,56 +36,8 @@ function timeAgo(iso: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function initials(name: string) {
-  return name.split(" ").map(p => p[0]).join("").toUpperCase().slice(0, 2);
-}
-
 function Badge({ status }: { status: ConversationStatus }) {
   return <span className={`badge badge-${status}`}>{STATUS_LABELS[status]}</span>;
-}
-
-// ── Sidebar (same as page.tsx) ─────────────────────────────────────────────────
-
-function Sidebar({ role, reps, selectedRepId, onRoleChange, onRepChange, pendingCount }: {
-  role: Role; reps: SalesRep[]; selectedRepId: string;
-  onRoleChange: (r: Role) => void; onRepChange: (id: string) => void;
-  pendingCount: number;
-}) {
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-mark">SDR</div>
-        <div className="sidebar-logo-text">Agent</div>
-      </div>
-      <nav className="sidebar-nav">
-        <div className="sidebar-section-label" style={{ padding: "12px 10px 6px" }}>Workspace</div>
-        <a href="/" className="sidebar-link active">
-          <span className="sidebar-link-icon">◈</span>
-          Conversations
-          {pendingCount > 0 && <span className="sidebar-link-badge">{pendingCount}</span>}
-        </a>
-        <a href="/reps" className="sidebar-link">
-          <span className="sidebar-link-icon">◎</span>
-          Sales Reps
-        </a>
-      </nav>
-      <div className="sidebar-bottom">
-        <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--sidebar-text)", marginBottom: 8 }}>View As</div>
-        <div className="role-toggle">
-          <button className={`role-btn${role === "manager" ? " active" : ""}`} onClick={() => onRoleChange("manager")}>Manager</button>
-          <button className={`role-btn${role === "rep" ? " active" : ""}`} onClick={() => onRoleChange("rep")}>Rep</button>
-        </div>
-        {role === "rep" && (
-          <select className="rep-selector" value={selectedRepId} onChange={e => onRepChange(e.target.value)}>
-            <option value="">Select rep…</option>
-            {reps.filter(r => r.isActive).map(r => (
-              <option key={r.id} value={r.id}>{r.name}</option>
-            ))}
-          </select>
-        )}
-      </div>
-    </aside>
-  );
 }
 
 // ── Tool cards ─────────────────────────────────────────────────────────────────
@@ -477,9 +430,7 @@ function buildTimeline(messages: ConversationMessage[]): TimelineItem[] {
 
 function DetailInner({ id }: { id: string }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [role, setRole] = useState<Role>("manager");
-  const [selectedRepId, setSelectedRepId] = useState("");
+  const { user, loading: sessionLoading } = useSession();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [reps, setReps] = useState<SalesRep[]>([]);
   const [loading, setLoading] = useState(true);
@@ -487,17 +438,12 @@ function DetailInner({ id }: { id: string }) {
   const [customReply, setCustomReply] = useState("");
   const [showCustom, setShowCustom] = useState(false);
 
-  useEffect(() => {
-    const r = (searchParams.get("role") ?? localStorage.getItem("sdr-role") ?? "manager") as Role;
-    const rep = searchParams.get("repId") ?? localStorage.getItem("sdr-rep-id") ?? "";
-    setRole(r); setSelectedRepId(rep);
-  }, [searchParams]);
-
   async function load() {
+    if (!user) return;
     setLoading(true);
     const [convRes, repsRes] = await Promise.all([
       fetch(`/api/conversations/${id}`),
-      fetch("/api/reps"),
+      user.role === "rep" ? Promise.resolve({ ok: true, json: async () => [] as SalesRep[] }) : fetch("/api/reps"),
     ]);
     const convData = await convRes.json() as Conversation | { error: string };
     const repsData = await repsRes.json() as SalesRep[];
@@ -506,9 +452,7 @@ function DetailInner({ id }: { id: string }) {
     setLoading(false);
   }
 
-  useEffect(() => { void load(); }, [id]);
-
-  const pendingCount = 0; // static in detail view
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id, user]);
 
   async function approveDraft() {
     setActionLoading(true);
@@ -538,36 +482,30 @@ function DetailInner({ id }: { id: string }) {
     await load(); setActionLoading(false);
   }
 
-  function handleRoleChange(r: Role) { setRole(r); localStorage.setItem("sdr-role", r); }
-  function handleRepChange(rid: string) { setSelectedRepId(rid); localStorage.setItem("sdr-rep-id", rid); }
+  function goBack() { router.push("/"); }
 
-  function goBack() {
-    router.push(`/?role=${role}${selectedRepId ? `&repId=${selectedRepId}` : ""}`);
-  }
+  if (sessionLoading || !user) return <div className="login-shell"><div className="loading-row">Loading…</div></div>;
 
   if (loading) return (
     <div className="shell">
-      <Sidebar role={role} reps={[]} selectedRepId="" onRoleChange={handleRoleChange} onRepChange={handleRepChange} pendingCount={0} />
+      <Sidebar user={user} page="conversations" />
       <div className="main-content"><div className="loading-row">Loading…</div></div>
     </div>
   );
 
   if (!conversation) return (
     <div className="shell">
-      <Sidebar role={role} reps={reps} selectedRepId={selectedRepId} onRoleChange={handleRoleChange} onRepChange={handleRepChange} pendingCount={0} />
+      <Sidebar user={user} page="conversations" />
       <div className="main-content"><div className="loading-row">Conversation not found.</div></div>
     </div>
   );
 
   const timeline = buildTimeline(conversation.messages);
+  const canReassign = user.role === "admin" || user.role === "manager";
 
   return (
     <div className="shell">
-      <Sidebar
-        role={role} reps={reps} selectedRepId={selectedRepId}
-        onRoleChange={handleRoleChange} onRepChange={handleRepChange}
-        pendingCount={pendingCount}
-      />
+      <Sidebar user={user} page="conversations" />
 
       <div className="main-content">
         <div className="topbar">
@@ -614,17 +552,19 @@ function DetailInner({ id }: { id: string }) {
                 ) : (
                   <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Unassigned</div>
                 )}
-                <select
-                  className="reassign-select"
-                  defaultValue=""
-                  onChange={e => { if (e.target.value) void reassign(e.target.value); }}
-                  disabled={actionLoading}
-                >
-                  <option value="">Reassign…</option>
-                  {reps.filter(r => r.isActive).map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
+                {canReassign && (
+                  <select
+                    className="reassign-select"
+                    defaultValue=""
+                    onChange={e => { if (e.target.value) void reassign(e.target.value); }}
+                    disabled={actionLoading}
+                  >
+                    <option value="">Reassign…</option>
+                    {reps.filter(r => r.isActive).map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 

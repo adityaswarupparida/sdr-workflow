@@ -79,3 +79,26 @@ export interface AgentOutcome {
   hubspotLogged: boolean;
   followupScheduled?: { daysFromNow: number; reason: string };
 }
+
+export type UserRole = "admin" | "manager" | "rep";
+
+export interface User {
+  id: string;
+  username: string;
+  role: UserRole;
+  repId?: string;
+  createdAt: string;
+}
+
+/** Internal — never returned through the API. */
+export interface UserWithHash extends User {
+  passwordHash: string;
+}
+
+/** Payload encoded in the JWT and attached to a request after auth middleware. */
+export interface AuthContext {
+  userId: string;
+  username: string;
+  role: UserRole;
+  repId?: string;
+}

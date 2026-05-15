@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { CREATE_TABLES } from "./schema.js";
-import type { Conversation, ConversationMessage, ConversationStatus, EscalationReason, SalesRep } from "../types/index.js";
+import type { Conversation, ConversationMessage, ConversationStatus, EscalationReason, SalesRep, User, UserRole, UserWithHash } from "../types/index.js";
 
 const db = new Database(process.env["DB_PATH"] ?? "sdr.db", { create: true });
 db.run("PRAGMA journal_mode=WAL;");
@@ -146,16 +146,25 @@ export async function approveDraft(conversationId: string): Promise<string | nul
   return row.draftReply;
 }
 
-export function listConversations(status?: string): Conversation[] {
-  const rows = status
-    ? (db.prepare("SELECT * FROM conversations WHERE status = ? ORDER BY updatedAt DESC").all(status) as Record<string, unknown>[])
-    : (db.prepare("SELECT * FROM conversations ORDER BY updatedAt DESC").all() as Record<string, unknown>[]);
+/** When `scopeToRepId` is set, only conversations assigned to that rep are returned.
+ *  Used to scope a rep's view server-side so they can't see anyone else's pipeline. */
+export function listConversations(status?: string, scopeToRepId?: string): Conversation[] {
+  const where: string[] = [];
+  const params: string[] = [];
+  if (status) { where.push("status = ?"); params.push(status); }
+  if (scopeToRepId) { where.push("assignedRepId = ?"); params.push(scopeToRepId); }
+  const sql = `SELECT * FROM conversations${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updatedAt DESC`;
+  const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
   return rows.map(rowToConversation);
 }
 
-export function getConversation(id: string): Conversation | null {
+/** When `scopeToRepId` is set, a conversation assigned to a different rep returns null
+ *  (looks indistinguishable from "not found" so we don't leak existence). */
+export function getConversation(id: string, scopeToRepId?: string): Conversation | null {
   const row = db.prepare("SELECT * FROM conversations WHERE id = ?").get(id) as Record<string, unknown> | null;
-  return row ? rowToConversation(row) : null;
+  if (!row) return null;
+  if (scopeToRepId && row["assignedRepId"] !== scopeToRepId) return null;
+  return rowToConversation(row);
 }
 
 export async function saveCustomReply(conversationId: string, body: string): Promise<void> {
@@ -165,4 +174,48 @@ export async function saveCustomReply(conversationId: string, body: string): Pro
 
 export async function reassignConversation(conversationId: string, repId: string): Promise<void> {
   db.prepare("UPDATE conversations SET assignedRepId = ?, updatedAt = ? WHERE id = ?").run(repId, now(), conversationId);
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────────
+
+function rowToUser(row: Record<string, unknown>): UserWithHash {
+  return {
+    id: row["id"] as string,
+    username: row["username"] as string,
+    passwordHash: row["passwordHash"] as string,
+    role: row["role"] as UserRole,
+    repId: (row["repId"] as string | null) ?? undefined,
+    createdAt: row["createdAt"] as string,
+  };
+}
+
+function publicUser(u: UserWithHash): User {
+  const { passwordHash: _hash, ...rest } = u;
+  void _hash;
+  return rest;
+}
+
+export function getUserByUsername(username: string): UserWithHash | null {
+  const row = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as Record<string, unknown> | null;
+  return row ? rowToUser(row) : null;
+}
+
+export function getUserById(id: string): User | null {
+  const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as Record<string, unknown> | null;
+  return row ? publicUser(rowToUser(row)) : null;
+}
+
+export function createUser(username: string, passwordHash: string, role: UserRole, repId?: string): User {
+  const id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const ts = now();
+  db.prepare(
+    "INSERT INTO users (id, username, passwordHash, role, repId, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(id, username, passwordHash, role, repId ?? null, ts);
+  const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as Record<string, unknown>;
+  return publicUser(rowToUser(row));
+}
+
+export function hasAnyAdmin(): boolean {
+  const row = db.prepare("SELECT 1 FROM users WHERE role = 'admin' LIMIT 1").get();
+  return row !== null;
 }

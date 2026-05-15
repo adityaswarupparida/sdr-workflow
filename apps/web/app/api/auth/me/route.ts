@@ -6,8 +6,8 @@ export async function GET(req: NextRequest) {
   const token = req.cookies.get("sdr-session")?.value;
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const status = req.nextUrl.searchParams.get("status");
-  const url = status ? `${AGENT_SERVER}/conversations?status=${status}` : `${AGENT_SERVER}/conversations`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${AGENT_SERVER}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return NextResponse.json(await res.json(), { status: res.status });
 }
