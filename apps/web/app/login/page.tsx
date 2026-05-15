@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { AppMark } from "../../components/app-mark";
 
 function LoginInner() {
   const router = useRouter();
@@ -33,7 +34,9 @@ function LoginInner() {
   return (
     <div className="login-shell">
       <div className="login-card">
-        <div className="login-mark">SDR</div>
+        <div className="login-mark">
+          <AppMark />
+        </div>
         <div className="login-title">Welcome back</div>
         <div className="login-subtitle">Sign in to your SDR Console.</div>
 

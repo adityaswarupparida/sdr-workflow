@@ -195,6 +195,24 @@ sequenceDiagram
 
 ---
 
+# Screenshots
+
+## Sales Rep View
+### Dashboard
+<img width="1708" height="977" alt="Screenshot 2026-05-15 at 8 06 23 PM" src="https://github.com/user-attachments/assets/d2be0be7-0873-4452-b5c1-30c3b298750b" />
+
+## Admin View
+### Dashboard
+<img width="1710" height="978" alt="Screenshot 2026-05-15 at 8 02 06 PM" src="https://github.com/user-attachments/assets/2981081d-dcf9-43fd-af49-f6fe1f198b48" />
+### Rep Add/Remove Dashboard
+<img width="1710" height="974" alt="Screenshot 2026-05-15 at 8 01 30 PM" src="https://github.com/user-attachments/assets/9dd97496-3fcd-4260-aa75-f99c1c71fe59" />
+
+## Conversation Detail/Timeline View
+<img width="1710" height="978" alt="Screenshot 2026-05-15 at 8 00 52 PM" src="https://github.com/user-attachments/assets/d4775287-dc77-44ca-80ae-d658293119ec" />
+<img width="1710" height="975" alt="Screenshot 2026-05-15 at 8 01 08 PM" src="https://github.com/user-attachments/assets/f149b1b8-ffbc-4643-acc2-5e6f3c46bb45" />
+
+---
+
 ## Project Structure
 
 ```
