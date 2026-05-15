@@ -204,6 +204,7 @@ sequenceDiagram
 ## Admin View
 ### Dashboard
 <img width="1710" height="978" alt="Screenshot 2026-05-15 at 8 02 06 PM" src="https://github.com/user-attachments/assets/2981081d-dcf9-43fd-af49-f6fe1f198b48" />
+
 ### Rep Management Dashboard
 <img width="1710" height="974" alt="Screenshot 2026-05-15 at 8 01 30 PM" src="https://github.com/user-attachments/assets/9dd97496-3fcd-4260-aa75-f99c1c71fe59" />
 
