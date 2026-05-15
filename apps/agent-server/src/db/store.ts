@@ -1,6 +1,17 @@
 import { Database } from "bun:sqlite";
 import { CREATE_TABLES } from "./schema.js";
-import type { Conversation, ConversationMessage, ConversationStatus, EscalationReason, SalesRep, ConversationSummary, User, UserRole, UserWithHash } from "../types/index.js";
+import type {
+  Conversation,
+  ConversationMessage,
+  ConversationStatus,
+  ConversationSummary,
+  EscalationReason,
+  SalesRep,
+  SummaryAction,
+  User,
+  UserRole,
+  UserWithHash,
+} from "../types/index.js";
 
 const db = new Database(process.env["DB_PATH"] ?? "sdr.db", { create: true });
 db.run("PRAGMA journal_mode=WAL;");
@@ -142,17 +153,40 @@ export async function markFollowUpPending(conversationId: string): Promise<void>
   db.prepare("UPDATE conversations SET status = ?, updatedAt = ? WHERE id = ?").run("follow_up_pending", now(), conversationId);
 }
 
+// Specialist reasons need a dedicated person (AE/SE/CS/Legal) → "escalated"
+// low_confidence just needs any rep to review → "pending_review"
+const SPECIALIST_REASONS: EscalationReason[] = [
+  "pricing_or_quote", "technical_deep_dive", "existing_customer", "legal_or_contract",
+];
+
 export async function setEscalated(conversationId: string, reason: EscalationReason, draftReply?: string): Promise<void> {
+  const status = SPECIALIST_REASONS.includes(reason) ? "escalated" : "pending_review";
   db.prepare("UPDATE conversations SET status = ?, escalationReason = ?, draftReply = ?, updatedAt = ? WHERE id = ?").run(
-    "pending_review", reason, draftReply ?? null, now(), conversationId,
+    status, reason, draftReply ?? null, now(), conversationId,
   );
 }
 
+export async function appendSummaryAction(
+  conversationId: string,
+  action: SummaryAction,
+  nextAction?: string,
+): Promise<void> {
+  const conv = getConversation(conversationId);
+  if (!conv?.summary) return;
+  await saveSummary(conversationId, {
+    ...conv.summary,
+    actions: [...conv.summary.actions, action],
+    ...(nextAction ? { nextAction } : {}),
+  });
+}
+
 export async function approveDraft(conversationId: string): Promise<string | null> {
-  const row = db.prepare("SELECT draftReply FROM conversations WHERE id = ?").get(conversationId) as { draftReply: string | null } | null;
-  if (!row) return null;
-  db.prepare("UPDATE conversations SET status = ?, draftReply = NULL, updatedAt = ? WHERE id = ?").run("resolved", now(), conversationId);
-  return row.draftReply;
+  const conv = getConversation(conversationId);
+  if (!conv) return null;
+  // Escalated conversations hand off to a specialist team → transferred, not resolved
+  const finalStatus = conv.status === "escalated" ? "transferred" : "resolved";
+  db.prepare("UPDATE conversations SET status = ?, draftReply = NULL, updatedAt = ? WHERE id = ?").run(finalStatus, now(), conversationId);
+  return conv.draftReply ?? null;
 }
 
 /** When `scopeToRepId` is set, only conversations assigned to that rep are returned.
@@ -178,7 +212,9 @@ export function getConversation(id: string, scopeToRepId?: string): Conversation
 
 export async function saveCustomReply(conversationId: string, body: string): Promise<void> {
   await appendMessage(conversationId, { role: "assistant", content: `[Human override] ${body}`, timestamp: now() });
-  db.prepare("UPDATE conversations SET status = ?, draftReply = NULL, updatedAt = ? WHERE id = ?").run("resolved", now(), conversationId);
+  const conv = getConversation(conversationId);
+  const finalStatus = conv?.status === "escalated" ? "transferred" : "resolved";
+  db.prepare("UPDATE conversations SET status = ?, draftReply = NULL, updatedAt = ? WHERE id = ?").run(finalStatus, now(), conversationId);
 }
 
 export async function reassignConversation(conversationId: string, repId: string): Promise<void> {

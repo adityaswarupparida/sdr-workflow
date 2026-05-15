@@ -2,7 +2,7 @@ import { describe, test, expect, spyOn } from "bun:test";
 
 process.env["DB_PATH"] = ":memory:";
 
-const { getOrCreateConversation, markResolved, markFollowUpPending, setEscalated, createRep } = await import("../db/store.js");
+const { getOrCreateConversation, markResolved, markFollowUpPending, setEscalated, createRep, approveDraft } = await import("../db/store.js");
 const { processFollowup } = await import("../queue/followup.worker.js");
 
 const BASE_JOB = {
@@ -26,11 +26,19 @@ describe("processFollowup", () => {
     expect(result.skipped).toContain("resolved");
   });
 
-  test("skips when conversation is pending human review", async () => {
+  test("skips when conversation is escalated to specialist", async () => {
     const conv = await getOrCreateConversation("thread_pending_fu", "prospect@acme.com");
-    await setEscalated(conv.id, "pricing_or_quote", "Draft");
+    await setEscalated(conv.id, "pricing_or_quote", "Draft"); // specialist → escalated status
     const result = await processFollowup({ ...BASE_JOB, conversationId: conv.id });
     expect(result.skipped).toContain("pending human review");
+  });
+
+  test("skips when conversation is transferred", async () => {
+    const conv = await getOrCreateConversation("thread_transferred_fu", "transferred@test.com");
+    await setEscalated(conv.id, "legal_or_contract", "Legal draft");
+    await approveDraft(conv.id); // escalated → approved → transferred
+    const result = await processFollowup({ ...BASE_JOB, conversationId: conv.id });
+    expect(result.skipped).toBeDefined(); // transferred is not a valid fire state
   });
 
   test("calls runSdrAgent when conversation is follow_up_pending", async () => {

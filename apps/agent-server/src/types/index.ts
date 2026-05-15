@@ -1,6 +1,6 @@
 export type LeadStatus = "new" | "contacted" | "qualified" | "unqualified" | "converted";
 export type DealStage = "prospecting" | "qualification" | "proposal" | "negotiation" | "closed_won" | "closed_lost";
-export type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending";
+export type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending" | "transferred";
 export type EscalationReason =
   | "pricing_or_quote"
   | "technical_deep_dive"

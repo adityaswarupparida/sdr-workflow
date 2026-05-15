@@ -7,6 +7,7 @@ const {
   getOrCreateConversation, appendMessage, markResolved, setEscalated, approveDraft,
   listConversations, getConversation, saveCustomReply, reassignConversation,
   createRep, listReps, getRep, updateRep, deleteRep, assignRepRoundRobin,
+  saveSummary, appendSummaryAction,
 } = await import("../db/store.js");
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -138,23 +139,39 @@ describe("markResolved", () => {
 });
 
 describe("setEscalated / approveDraft", () => {
-  test("setEscalated sets status to pending_review with reason and draft", async () => {
+  test("setEscalated sets status to escalated for specialist reasons", async () => {
     const conv = await getOrCreateConversation(uniqueThread(), "esc@test.com");
     await setEscalated(conv.id, "pricing_or_quote", "Here is the draft reply...");
     const updated = getConversation(conv.id);
-    expect(updated?.status).toBe("pending_review");
+    expect(updated?.status).toBe("escalated"); // specialist reason → escalated
     expect(updated?.escalationReason).toBe("pricing_or_quote");
     expect(updated?.draftReply).toBe("Here is the draft reply...");
   });
 
-  test("approveDraft returns the draft and clears it", async () => {
+  test("setEscalated sets status to pending_review for low_confidence", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "low@test.com");
+    await setEscalated(conv.id, "low_confidence", "Not sure how to respond...");
+    const updated = getConversation(conv.id);
+    expect(updated?.status).toBe("pending_review"); // non-specialist → pending review
+  });
+
+  test("approveDraft sets transferred for escalated conversations", async () => {
     const conv = await getOrCreateConversation(uniqueThread(), "approve@test.com");
     await setEscalated(conv.id, "pricing_or_quote", "Draft to send");
     const draft = await approveDraft(conv.id);
     expect(draft).toBe("Draft to send");
     const updated = getConversation(conv.id);
-    expect(updated?.status).toBe("resolved");
+    expect(updated?.status).toBe("transferred"); // specialist handoff → transferred not resolved
     expect(updated?.draftReply).toBeUndefined();
+  });
+
+  test("approveDraft sets resolved for pending_review conversations", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "approve2@test.com");
+    await setEscalated(conv.id, "low_confidence", "Draft to send");
+    const draft = await approveDraft(conv.id);
+    expect(draft).toBe("Draft to send");
+    const updated = getConversation(conv.id);
+    expect(updated?.status).toBe("resolved"); // non-specialist → resolved
   });
 
   test("approveDraft returns null for unknown conversation", async () => {
@@ -190,13 +207,112 @@ describe("reassignConversation", () => {
   });
 });
 
+describe("setEscalated — all specialist reasons", () => {
+  const specialistReasons = [
+    "pricing_or_quote",
+    "technical_deep_dive",
+    "existing_customer",
+    "legal_or_contract",
+  ] as const;
+
+  for (const reason of specialistReasons) {
+    test(`${reason} → escalated`, async () => {
+      const conv = await getOrCreateConversation(uniqueThread(), `${reason}@test.com`);
+      await setEscalated(conv.id, reason, "draft");
+      expect(getConversation(conv.id)?.status).toBe("escalated");
+    });
+  }
+
+  test("low_confidence → pending_review (not a specialist route)", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "lc@test.com");
+    await setEscalated(conv.id, "low_confidence", "draft");
+    expect(getConversation(conv.id)?.status).toBe("pending_review");
+  });
+});
+
 describe("saveCustomReply", () => {
-  test("appends human override message and resolves conversation", async () => {
+  test("resolves conversation when status is pending_review", async () => {
     const conv = await getOrCreateConversation(uniqueThread(), "custom@test.com");
     await setEscalated(conv.id, "low_confidence", "agent draft");
     await saveCustomReply(conv.id, "My custom reply");
     const updated = getConversation(conv.id);
     expect(updated?.status).toBe("resolved");
     expect(updated?.messages.some((m) => m.content.includes("My custom reply"))).toBe(true);
+  });
+
+  test("sets transferred when conversation is escalated to specialist", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "custom_esc@test.com");
+    await setEscalated(conv.id, "legal_or_contract", "agent draft");
+    await saveCustomReply(conv.id, "Custom reply to legal query");
+    expect(getConversation(conv.id)?.status).toBe("transferred");
+  });
+
+  test("clears draftReply regardless of final status", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "draft_clear@test.com");
+    await setEscalated(conv.id, "technical_deep_dive", "Technical draft");
+    await saveCustomReply(conv.id, "Custom technical reply");
+    expect(getConversation(conv.id)?.draftReply).toBeUndefined();
+  });
+});
+
+describe("saveSummary / appendSummaryAction", () => {
+  test("saveSummary persists structured summary on conversation", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "summary@test.com");
+    await saveSummary(conv.id, {
+      leadStatus: "qualified",
+      actions: [{ step: "Salesforce Lookup", detail: "Alex Rivera · Acme Corp" }],
+      notes: "Hot lead, follow up soon.",
+      nextAction: "Discovery call booked",
+    });
+    const updated = getConversation(conv.id);
+    expect(updated?.summary?.leadStatus).toBe("qualified");
+    expect(updated?.summary?.actions).toHaveLength(1);
+    expect(updated?.summary?.actions[0]?.step).toBe("Salesforce Lookup");
+    expect(updated?.summary?.notes).toBe("Hot lead, follow up soon.");
+    expect(updated?.summary?.nextAction).toBe("Discovery call booked");
+  });
+
+  test("appendSummaryAction adds a new action to existing summary", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "append@test.com");
+    await saveSummary(conv.id, {
+      leadStatus: "new",
+      actions: [{ step: "Salesforce Lookup", detail: "Found" }],
+    });
+    await appendSummaryAction(conv.id, { step: "Email Sent", detail: "Intro email sent" });
+    const updated = getConversation(conv.id);
+    expect(updated?.summary?.actions).toHaveLength(2);
+    expect(updated?.summary?.actions[1]?.step).toBe("Email Sent");
+  });
+
+  test("appendSummaryAction updates nextAction when provided", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "nextact@test.com");
+    await saveSummary(conv.id, { leadStatus: "contacted", actions: [], nextAction: "Follow-up" });
+    await appendSummaryAction(conv.id, { step: "Human Approved", detail: "Sent by rep" }, "Resolved");
+    expect(getConversation(conv.id)?.summary?.nextAction).toBe("Resolved");
+  });
+
+  test("appendSummaryAction preserves nextAction when not provided", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "keepnext@test.com");
+    await saveSummary(conv.id, { leadStatus: "new", actions: [], nextAction: "Awaiting reply" });
+    await appendSummaryAction(conv.id, { step: "HubSpot Sync", detail: "Contact created" });
+    expect(getConversation(conv.id)?.summary?.nextAction).toBe("Awaiting reply");
+  });
+
+  test("appendSummaryAction does nothing when conversation has no summary", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "nosummary@test.com");
+    // Should not throw
+    await expect(
+      appendSummaryAction(conv.id, { step: "Ghost step", detail: "Nothing" })
+    ).resolves.toBeUndefined();
+    expect(getConversation(conv.id)?.summary).toBeUndefined();
+  });
+
+  test("saveSummary overwrites previous summary", async () => {
+    const conv = await getOrCreateConversation(uniqueThread(), "overwrite@test.com");
+    await saveSummary(conv.id, { leadStatus: "new", actions: [{ step: "Old", detail: "Old data" }] });
+    await saveSummary(conv.id, { leadStatus: "qualified", actions: [{ step: "New", detail: "New data" }] });
+    const updated = getConversation(conv.id);
+    expect(updated?.summary?.leadStatus).toBe("qualified");
+    expect(updated?.summary?.actions[0]?.step).toBe("New");
   });
 });

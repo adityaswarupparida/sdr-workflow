@@ -15,7 +15,7 @@ export async function processFollowup(data: FollowupJobData): Promise<{ skipped?
   if (conversation.status === "resolved") {
     return { skipped: "already resolved — lead replied before follow-up fired" };
   }
-  if (conversation.status === "pending_review") {
+  if (conversation.status === "pending_review" || conversation.status === "escalated") {
     return { skipped: "pending human review — not following up automatically" };
   }
   if (conversation.status !== "follow_up_pending") {

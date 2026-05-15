@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "../hooks/use-session";
 import { Sidebar, initials } from "../components/sidebar";
 
-type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending";
+type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending" | "transferred";
 
 interface SalesRep { id: string; name: string; email: string; isActive: boolean; }
 interface Conversation {
@@ -17,12 +17,12 @@ interface Conversation {
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
   active: "Active", pending_review: "Needs Review", resolved: "Resolved",
-  escalated: "Escalated", follow_up_pending: "Follow-up",
+  escalated: "Escalated", follow_up_pending: "Follow-up", transferred: "Transferred",
 };
 
 const STATUS_ROW_ACCENT: Record<ConversationStatus, string> = {
   active: "#60a5fa", pending_review: "#fbbf24", resolved: "#34d399",
-  escalated: "#f87171", follow_up_pending: "#c084fc",
+  escalated: "#f87171", follow_up_pending: "#c084fc", transferred: "#818cf8",
 };
 
 const PRIORITY_ORDER: ConversationStatus[] = ["pending_review", "escalated", "follow_up_pending", "active", "resolved"];
@@ -102,6 +102,7 @@ function ManagerView({ conversations, reps, onOpen }: {
               <option value="active">Active</option>
               <option value="resolved">Resolved</option>
               <option value="escalated">Escalated</option>
+              <option value="transferred">Transferred</option>
             </select>
             <select className="filter-select" value={filterRep} onChange={e => setFilterRep(e.target.value)}>
               <option value="">All Reps</option>

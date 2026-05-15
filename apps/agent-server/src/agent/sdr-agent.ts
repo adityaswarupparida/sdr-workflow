@@ -66,7 +66,7 @@ export async function runSdrAgent(inbound: InboundEmail): Promise<AgentOutcome> 
 
     if (response.stop_reason === "end_turn") {
       const textBlock = assistantContent.find((b) => b.type === "text");
-      if (textBlock && textBlock.type === "text") {
+      if (textBlock && textBlock.type === "text" && textBlock.text.trim()) {
         await appendMessage(conversation.id, {
           role: "assistant",
           content: textBlock.text,

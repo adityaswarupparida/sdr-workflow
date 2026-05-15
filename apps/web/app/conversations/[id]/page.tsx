@@ -7,7 +7,7 @@ import { BrandLogo } from "../../../components/brand-logo";
 import { Sidebar, initials } from "../../../components/sidebar";
 import { useSession } from "../../../hooks/use-session";
 
-type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending";
+type ConversationStatus = "active" | "pending_review" | "resolved" | "escalated" | "follow_up_pending" | "transferred";
 
 interface SalesRep { id: string; name: string; email: string; isActive: boolean; }
 interface ConversationMessage {
@@ -70,7 +70,7 @@ function SummaryCard({ summary }: { summary: ConversationSummary }) {
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
   active: "Active", pending_review: "Needs Review", resolved: "Resolved",
-  escalated: "Escalated", follow_up_pending: "Follow-up Pending",
+  escalated: "Escalated", follow_up_pending: "Follow-up Pending", transferred: "Transferred",
 };
 
 function timeAgo(iso: string) {
@@ -95,7 +95,7 @@ type ToolConfig = {
   label: string;
   cls: string;
   brand?: string;             // logo.dev name slug (undefined → glyph)
-  glyph?: "clock";            // built-in SVG fallback for tools without a brand
+  glyph?: "clock" | "summary";
 };
 
 const TOOL_CONFIG: Record<string, ToolConfig> = {
@@ -108,6 +108,7 @@ const TOOL_CONFIG: Record<string, ToolConfig> = {
   send_email:                   { label: "Email Sent",                cls: "tc-email",    brand: "google.com" },
   schedule_followup:            { label: "Follow-up Scheduled",       cls: "tc-followup", glyph: "clock" },
   escalate_to_human:            { label: "Escalated to Human",        cls: "tc-escalate", brand: "slack.com" },
+  log_summary:                  { label: "Log Summary",               cls: "tc-summary",  glyph: "summary" },
 };
 
 function formatTime(ts: string | undefined): string {
@@ -163,6 +164,8 @@ function summarize(
       const urgency = inp?.["urgency"] as string | undefined;
       return [reason, urgency ? `· ${urgency}` : null].filter(Boolean).join(" ") || "Escalated";
     }
+    case "log_summary":
+      return "Summary logged below";
     default:
       return "";
   }
@@ -177,9 +180,21 @@ function ClockGlyph() {
   );
 }
 
+function SummaryGlyph() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="7" y1="8" x2="17" y2="8" />
+      <line x1="7" y1="12" x2="17" y2="12" />
+      <line x1="7" y1="16" x2="13" y2="16" />
+    </svg>
+  );
+}
+
 function ToolIcon({ cfg }: { cfg: ToolConfig }) {
   if (cfg.brand) return <BrandLogo name={cfg.brand} size={26} alt={cfg.label} />;
   if (cfg.glyph === "clock") return <ClockGlyph />;
+  if (cfg.glyph === "summary") return <SummaryGlyph />;
   return <span style={{ fontSize: 18, color: "currentColor" }}>◆</span>;
 }
 
@@ -435,6 +450,12 @@ function ToolCard({ entry }: { entry: ToolEntry }) {
           </>
         );
       }
+      case "log_summary":
+        return (
+          <div className="tool-hero-sub" style={{ marginTop: 10 }}>
+            Summary logged below ↓
+          </div>
+        );
       default:
         return <div className="tool-hero-sub" style={{ marginTop: 14 }}>Tool executed.</div>;
     }
@@ -646,7 +667,7 @@ function DetailInner({ id }: { id: string }) {
             </div>
 
             {/* Review panel */}
-            {conversation.status === "pending_review" && conversation.draftReply && (
+            {(conversation.status === "pending_review" || conversation.status === "escalated") && conversation.draftReply && (
               <div className="review-panel">
                 <div className="review-panel-header">
                   <span className="review-panel-icon">⚑</span>

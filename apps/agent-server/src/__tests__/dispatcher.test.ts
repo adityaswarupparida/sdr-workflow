@@ -108,6 +108,57 @@ describe("dispatchTool — escalation", () => {
   });
 });
 
+describe("dispatchTool — log_summary", () => {
+  test("returns logged: true", async () => {
+    const { result } = await dispatchTool("log_summary", {
+      leadStatus: "qualified",
+      actions: [{ step: "Salesforce Lookup", detail: "Alex Rivera · Acme Corp" }],
+      notes: "Hot lead.",
+      nextAction: "Awaiting reply",
+    });
+    expect((result as { logged: boolean }).logged).toBe(true);
+  });
+
+  test("returns structured summary on result", async () => {
+    const { summary } = await dispatchTool("log_summary", {
+      leadStatus: "new",
+      actions: [
+        { step: "Salesforce Lookup", detail: "Not found → created" },
+        { step: "Email Sent", detail: "Intro email" },
+      ],
+      nextAction: "Follow-up May 20",
+    });
+    expect(summary?.leadStatus).toBe("new");
+    expect(summary?.actions).toHaveLength(2);
+    expect(summary?.nextAction).toBe("Follow-up May 20");
+  });
+
+  test("works without optional fields (notes, nextAction)", async () => {
+    const { result, summary } = await dispatchTool("log_summary", {
+      leadStatus: "contacted",
+      actions: [{ step: "HubSpot Sync", detail: "Synced" }],
+    });
+    expect((result as { logged: boolean }).logged).toBe(true);
+    expect(summary?.notes).toBeUndefined();
+    expect(summary?.nextAction).toBeUndefined();
+  });
+
+  test("saves summary to conversation when conversationId provided", async () => {
+    process.env["DB_PATH"] = ":memory:";
+    const { getOrCreateConversation, getConversation } = await import("../db/store.js");
+    const conv = await getOrCreateConversation("thread_dispatcher_summary", "test@summary.com");
+
+    await dispatchTool("log_summary", {
+      leadStatus: "qualified",
+      actions: [{ step: "Test", detail: "Detail" }],
+    }, undefined, conv.id);
+
+    const updated = getConversation(conv.id);
+    expect(updated?.summary?.leadStatus).toBe("qualified");
+    expect(updated?.summary?.actions[0]?.step).toBe("Test");
+  });
+});
+
 describe("dispatchTool — unknown tool", () => {
   test("returns error for unrecognised tool name", async () => {
     const { result } = await dispatchTool("nonexistent_tool", {});

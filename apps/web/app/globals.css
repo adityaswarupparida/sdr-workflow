@@ -563,6 +563,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .badge-escalated        { background: var(--danger-dim);   color: var(--danger);
                           border-color: color-mix(in oklab, var(--danger) 22%, transparent); }
 .badge-escalated::before { background: var(--danger); }
+.badge-transferred      { background: rgba(99,102,241,0.12); color: #818cf8;
+                          border-color: rgba(99,102,241,0.22); }
+.badge-transferred::before { background: #818cf8; }
 
 /* Lead pipeline statuses — used by Salesforce lookup tool card */
 .badge-new              { background: var(--info-dim);     color: var(--info);
@@ -1022,6 +1025,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .tool-card.tc-escalate { border-left-color: var(--danger); }
 .tool-card.tc-followup { border-left-color: var(--purple); }
 .tool-card.tc-generic  { border-left-color: var(--text-3); }
+.tool-card.tc-summary  { border-left-color: var(--accent); }
 
 /* Header — collapsed and expanded share this layout */
 .tool-card-header {
@@ -1046,6 +1050,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 /* Tint only for glyph fallbacks (not branded logos) */
 .tc-followup .tool-card-icon { color: var(--purple); }
 .tc-generic  .tool-card-icon { color: var(--text-2); }
+.tc-summary  .tool-card-icon { color: var(--accent); }
 
 /* Meta column — label + one-line summary */
 .tool-card-meta { min-width: 0; }

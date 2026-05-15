@@ -1,6 +1,6 @@
 import { handleInboundEmail } from "./webhooks/inbound-email.js";
 import { listConversations, getConversation, approveDraft, saveCustomReply, reassignConversation,
-         listReps, getRep, createRep, updateRep, deleteRep } from "./db/store.js";
+         listReps, getRep, createRep, updateRep, deleteRep, appendSummaryAction } from "./db/store.js";
 import { seedReps } from "./db/seed.js";
 import { startFollowupWorker } from "./queue/followup.worker.js";
 import * as email from "./integrations/email/client.js";
@@ -9,6 +9,13 @@ import { handleSignin, handleMe, handleCreateUser, handleChangePassword } from "
 import { requireAuth, requireRole, AuthError } from "./auth/middleware.js";
 import { seedAdmin } from "./auth/seed.js";
 import type { AuthContext } from "./types/index.js";
+
+const ESCALATION_ROUTES: Record<string, string> = {
+  pricing_or_quote:    "Account Executive",
+  technical_deep_dive: "Solutions Engineer",
+  existing_customer:   "Customer Success",
+  legal_or_contract:   "Legal",
+};
 
 seedReps();
 await seedAdmin();
@@ -144,7 +151,9 @@ Bun.serve({
         const id = approveMatch[1]!;
         const conversation = getConversation(id, repScope(ctx));
         if (!conversation) return json({ error: "Not found" }, 404);
-        if (conversation.status !== "pending_review") return json({ error: "Conversation is not pending review" }, 400);
+        if (conversation.status !== "pending_review" && conversation.status !== "escalated") {
+          return json({ error: "Conversation is not awaiting review" }, 400);
+        }
 
         const draft = await approveDraft(id);
         if (!draft) return json({ error: "No draft to approve" }, 400);
@@ -153,6 +162,16 @@ Bun.serve({
         const sent = await email.sendEmail({ to: conversation.leadEmail, subject: "Re: Follow-up", body: draft, cc });
         const hs = await hubspot.getContactByEmail(conversation.leadEmail);
         if (hs) await hubspot.logEmailActivity(hs.id, "Re: Follow-up (approved)", draft);
+
+        const repName = conversation.assignedRep?.name ?? "Rep";
+        const isTransfer = conversation.status === "escalated";
+        const transferTarget = ESCALATION_ROUTES[conversation.escalationReason as string] ?? "Specialist";
+        await appendSummaryAction(id, {
+          step: isTransfer ? "Transferred" : "Human Approved",
+          detail: isTransfer
+            ? `Handed off to ${transferTarget} · email sent by ${repName}`
+            : `Draft approved and sent by ${repName}`,
+        }, isTransfer ? `Transferred to ${transferTarget}` : "Resolved");
 
         return json({ success: true, messageId: sent.messageId });
       }
@@ -177,6 +196,16 @@ Bun.serve({
         await saveCustomReply(id, body.body);
         const hs = await hubspot.getContactByEmail(conversation.leadEmail);
         if (hs) await hubspot.logEmailActivity(hs.id, body.subject ?? "Re: Your inquiry (manual)", body.body);
+
+        const repName = conversation.assignedRep?.name ?? "Rep";
+        const isTransfer = conversation.status === "escalated";
+        const transferTarget = ESCALATION_ROUTES[conversation.escalationReason as string] ?? "Specialist";
+        await appendSummaryAction(id, {
+          step: isTransfer ? "Transferred" : "Rep Reply",
+          detail: isTransfer
+            ? `Handed off to ${transferTarget} · custom reply by ${repName}`
+            : `Custom reply sent by ${repName}`,
+        }, isTransfer ? `Transferred to ${transferTarget}` : "Resolved");
 
         return json({ success: true, messageId: sent.messageId });
       }
